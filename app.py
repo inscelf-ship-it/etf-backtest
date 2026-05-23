@@ -327,24 +327,46 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---- 彩蛋：页面底部显示（零 overlay，零兼容问题） ----
-_, egg_col = st.columns([9, 1])
-with egg_col:
-    if st.button("🎁", key="egg_trigger_btn", help="打开彩蛋", use_container_width=True):
-        st.session_state.egg_open = not st.session_state.get("egg_open", False)
-
-if st.session_state.get("egg_open", False):
-    st.markdown("""
-    <div style="
-        background:linear-gradient(135deg,#1a1a2e,#16213e);
-        border-radius:16px; padding:24px 32px; max-width:400px; margin:8px auto;
-        text-align:center; box-shadow:0 4px 16px rgba(0,0,0,.3);
-    ">
-        <div style="font-size:40px; line-height:1.3;">✨<br>🐱🎀</div>
-        <div style="color:#FFD700; font-size:17px; margin:10px 0 6px;">🐱 克里斯蒂娜喵~ 🐱</div>
-        <div style="color:#9CA3AF; font-size:13px;">El. Psy. Kongroo.</div>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("✕ 关闭", key="egg_close_btn", use_container_width=True):
-        st.session_state.egg_open = False
-        st.rerun()
+# ---- 彩蛋：自包含 HTML iframe（纯 JS 模态框，点击100%可用） ----
+# 放在页面底部，一个小图标按钮，点击弹出模态框
+st.components.v1.html("""
+<div id="egg-wrapper" style="text-align:center; padding:0 0 16px 0;">
+  <button id="egg-btn" style="
+    background:linear-gradient(135deg,#FF6B6B,#ee5a24);
+    color:#fff; border:none; border-radius:20px;
+    padding:6px 18px; font-size:16px; cursor:pointer;
+    box-shadow:0 2px 8px rgba(238,90,36,.3);
+    transition:transform .15s;
+  ">🎁</button>
+</div>
+<div id="egg-overlay" style="display:none; position:fixed; z-index:99999; left:0; top:0;
+     width:100%; height:100%; background:rgba(0,0,0,.7);
+     justify-content:center; align-items:center;">
+  <div style="
+    background:linear-gradient(135deg,#1a1a2e,#16213e);
+    border-radius:16px; padding:32px 40px; max-width:420px; width:90%;
+    text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.6);
+    position:relative;
+  ">
+    <span id="egg-close" style="
+      position:absolute; top:8px; right:14px; color:#aaa;
+      font-size:28px; cursor:pointer; line-height:1;
+    ">&times;</span>
+    <div style="font-size:48px; line-height:1.4; margin:8px 0;">✨<br>🐱🎀</div>
+    <div style="color:#FFD700; font-size:18px; margin:12px 0 8px;">🐱 克里斯蒂娜喵~ 🐱</div>
+    <div style="color:#9CA3AF; font-size:13px;">El. Psy. Kongroo.</div>
+  </div>
+</div>
+<script>
+(function(){
+  var btn = document.getElementById('egg-btn');
+  var overlay = document.getElementById('egg-overlay');
+  var closeBtn = document.getElementById('egg-close');
+  if(btn && overlay){
+    btn.onclick = function(){ overlay.style.display = 'flex'; };
+    overlay.onclick = function(e){ if(e.target === overlay) overlay.style.display = 'none'; };
+    if(closeBtn) closeBtn.onclick = function(){ overlay.style.display = 'none'; };
+  }
+})();
+</script>
+""", height=70, scrolling=False)
