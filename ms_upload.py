@@ -46,5 +46,22 @@ for fname in files_to_upload:
     except Exception as e:
         print(f"ERROR ({e})")
 
+# Trigger rebuild
+print("\n  Triggering rebuild...", end=" ")
+try:
+    resp = requests.post(
+        f"https://www.modelscope.cn/api/spaces/{SPACE_ID}/rebuild",
+        headers=headers,
+        json={},
+        timeout=30,
+    )
+    if resp.status_code in (200, 201, 202):
+        print("OK")
+    else:
+        print(f"maybe OK (status {resp.status_code})")
+except Exception as e:
+    print(f"note: {e}")
+    print("  Rebuild may need to be triggered manually from the webpage")
+
 print()
 print("Done! Visit: https://www.modelscope.cn/spaces/konatos/etf-backtest")
