@@ -11,7 +11,7 @@ if not TOKEN:
 
 BASE = "C:/Users/F/Desktop/fund_backtest"
 SPACE_ID = "konatos/etf-backtest"
-API_BASE = "https://www.modelscope.cn/api/v1"
+API_BASE = "https://www.modelscope.cn/api"
 
 files_to_upload = [
     "app.py", "data_fetcher.py", "backtest.py", "charts.py",
