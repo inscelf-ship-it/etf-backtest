@@ -1,192 +1,208 @@
 """
-可视化图表模块：使用 plotly 创建交互式图表（多标的组合版）
+可视化图表模块 — 收益额曲线 + 收益率曲线（仅2张图，不可拖拽）
+支持基准对比（沪深300 / 标普500 等）
+所有数值保留小数点后2位
 """
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import pandas as pd
-import numpy as np
 
 
-def create_portfolio_dashboard(
+def _calc_daily_change(series: pd.Series) -> pd.Series:
+    """计算每日变化量（当日收益/收益率），结果精确到2位小数"""
+    result = pd.Series(0.0, index=series.index)
+    diff = series.iloc[1:].values - series.iloc[:-1].values
+    result.iloc[1:] = [round(float(v), 2) for v in diff]
+    return result
+
+
+def _normalize_benchmark(benchmark_df: pd.DataFrame, portfolio_dates: pd.Series) -> pd.DataFrame:
+    """将基准数据对齐到组合日期范围，并归一化到起始值为0%收益率"""
+    if benchmark_df is None or benchmark_df.empty:
+        return None
+    bm = benchmark_df.copy()
+    bm["date"] = pd.to_datetime(bm["date"])
+    start = portfolio_dates.min()
+    end = portfolio_dates.max()
+    bm = bm[(bm["date"] >= start) & (bm["date"] <= end)].reset_index(drop=True)
+    if bm.empty:
+        return None
+    first_close = bm["close"].iloc[0]
+    if first_close <= 0:
+        return None
+    bm["return_rate"] = (bm["close"] / first_close - 1) * 100
+    return bm[["date", "close", "return_rate"]]
+
+
+def _align_to_portfolio_dates(benchmark_df: pd.DataFrame, portfolio_dates: pd.Series) -> pd.Series:
+    """将基准的return_rate对齐到组合的日期序列（向后填充）"""
+    if benchmark_df is None:
+        return None
+    bm = benchmark_df.set_index("date")["return_rate"]
+    aligned = bm.reindex(portfolio_dates).ffill()
+    return aligned.bfill()
+
+
+def plot_profit_curve(
     portfolio_df: pd.DataFrame,
-    asset_details: dict,
-    title: str = "组合回测结果",
+    benchmark_label: str = None,
+    benchmark_df: pd.DataFrame = None,
+    title: str = "收益额曲线",
+    total_investment: float = 100000,
 ) -> go.Figure:
-    """
-    创建组合综合仪表盘
-
-    参数:
-        portfolio_df: 组合每日数据 (date, hold_value, total_cost, return_rate, drawdown)
-        asset_details: {标的名称: DataFrame(每日明细)}
-        title: 总标题
-
-    返回:
-        plotly Figure 对象
-    """
-    fig = make_subplots(
-        rows=4,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.06,
-        subplot_titles=(
-            "组合累计收益率",
-            "组合持仓市值 vs 累计投入",
-            "回撤曲线",
-            "各标的累计收益率对比",
-        ),
-        row_heights=[0.3, 0.25, 0.2, 0.25],
-    )
-
-    # 颜色方案
-    colors = [
-        "#00BFFF", "#FF6B6B", "#4ECDC4", "#FFD93D",
-        "#6C5CE7", "#A8E6CF", "#FF8A5C", "#3DC1D3",
-        "#E77F67", "#786FA6", "#F3A683",
-    ]
-
-    # ---- 子图1: 组合收益率 ----
-    fig.add_trace(
-        go.Scatter(
-            x=portfolio_df["date"],
-            y=portfolio_df["return_rate"],
-            mode="lines",
-            name="组合收益率",
-            line=dict(color="#00BFFF", width=2.5),
-            hovertemplate="日期: %{x|%Y-%m-%d}<br>收益率: %{y:.2f}%<extra></extra>",
-        ),
-        row=1, col=1,
-    )
-    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3, row=1, col=1)
-
-    # ---- 子图2: 市值 vs 投入 ----
-    fig.add_trace(
-        go.Scatter(
-            x=portfolio_df["date"],
-            y=portfolio_df["hold_value"],
-            mode="lines",
-            name="持仓市值",
-            line=dict(color="#FF6B6B", width=2),
-            fill="tozeroy",
-            fillcolor="rgba(255, 107, 107, 0.05)",
-            hovertemplate="日期: %{x|%Y-%m-%d}<br>市值: ¥%{y:.2f}<extra></extra>",
-        ),
-        row=2, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=portfolio_df["date"],
-            y=portfolio_df["total_cost"],
-            mode="lines",
-            name="累计投入",
-            line=dict(color="#4ECDC4", width=2, dash="dash"),
-            hovertemplate="日期: %{x|%Y-%m-%d}<br>投入: ¥%{y:.2f}<extra></extra>",
-        ),
-        row=2, col=1,
-    )
-
-    # ---- 子图3: 回撤 ----
-    if "drawdown" in portfolio_df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=portfolio_df["date"],
-                y=portfolio_df["drawdown"],
-                mode="lines",
-                name="回撤",
-                line=dict(color="#FF4757", width=1.5),
-                fill="tozeroy",
-                fillcolor="rgba(255, 71, 87, 0.1)",
-                hovertemplate="日期: %{x|%Y-%m-%d}<br>回撤: %{y:.2f}%<extra></extra>",
-            ),
-            row=3, col=1,
-        )
-
-    # ---- 子图4: 各标的收益率对比 ----
-    for i, (asset_name, df) in enumerate(asset_details.items()):
-        color = colors[i % len(colors)]
-        fig.add_trace(
-            go.Scatter(
-                x=df["date"],
-                y=df["return_rate"],
-                mode="lines",
-                name=asset_name,
-                line=dict(color=color, width=1.5),
-                hovertemplate=f"{asset_name}<br>日期: %{{x|%Y-%m-%d}}<br>收益率: %{{y:.2f}}%<extra></extra>",
-            ),
-            row=4, col=1,
-        )
-
-    fig.update_layout(
-        title=dict(text=title, x=0.5, font=dict(size=20)),
-        template="plotly_white",
-        height=1100,
-        hovermode="x unified",
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)),
-    )
-
-    fig.update_xaxes(rangeslider=dict(visible=False), row=4, col=1)
-    fig.update_yaxes(tickformat=".2f", ticksuffix="%", row=1, col=1)
-    fig.update_yaxes(tickformat=",", row=2, col=1)
-    fig.update_yaxes(tickformat=".2f", ticksuffix="%", autorange="reversed", row=3, col=1)
-    fig.update_yaxes(tickformat=".2f", ticksuffix="%", row=4, col=1)
-
-    return fig
-
-
-def plot_asset_radar(asset_final: dict) -> go.Figure:
-    """
-    绘制各标的收益-风险雷达图（年化收益 vs 最大回撤）
-    """
-    names = []
-    returns = []
-    drawdowns = []
-    weights = []
-
-    for name, info in asset_final.items():
-        names.append(name.split("(")[0])
-        returns.append(info["年化收益率%"])
-        drawdowns.append(info["最大回撤%"])
-        weights.append(info["权重%"])
-
+    """收益额随时间曲线，可选叠加基准对比"""
     fig = go.Figure()
+    profit = [round(float(v), 2) for v in (portfolio_df["hold_value"] - portfolio_df["total_cost"])]
+    daily_profit = _calc_daily_change(portfolio_df["hold_value"] - portfolio_df["total_cost"])
+    daily_profit_list = [round(float(v), 2) for v in daily_profit]
 
-    for i, name in enumerate(names):
-        color = colors_list[i % len(colors_list)]
-        # 收益/回撤散点
-        fig.add_trace(
-            go.Scatter(
-                x=[drawdowns[i]],
-                y=[returns[i]],
-                mode="markers+text",
-                marker=dict(
-                    size=weights[i] * 2 + 10,
-                    color=color,
-                    line=dict(width=2, color="white"),
-                    sizemin=15,
-                ),
-                text=name,
-                textposition="top center",
-                name=name,
-                hovertemplate=f"{names[i]}<br>权重: {weights[i]}%<br>年化收益: {returns[i]:.1f}%<br>最大回撤: {drawdowns[i]:.1f}%<extra></extra>",
-            )
-        )
+    # 累计收益曲线（hover时显示当日收益额）
+    fig.add_trace(go.Scatter(
+        x=portfolio_df["date"], y=profit,
+        mode="lines", name="累计收益额",
+        line=dict(color="#2962FF", width=2),
+        fill="tozeroy", fillcolor="rgba(41, 98, 255, 0.05)",
+        customdata=list(zip(daily_profit_list)),
+        hovertemplate=(
+            "<b>%{x|%Y-%m-%d}</b><br>" +
+            "累计收益额: %{y:+,.2f}元<br>" +
+            "当日收益额: %{customdata[0]:+,.2f}元<br>" +
+            "<extra></extra>"
+        ),
+    ))
+
+    # 基准对比线
+    if benchmark_label and benchmark_df is not None:
+        aligned_bm_return = _align_to_portfolio_dates(benchmark_df, portfolio_df["date"])
+        if aligned_bm_return is not None:
+            bm_profit = [round(float(v) / 100 * total_investment, 2) for v in aligned_bm_return]
+            bm_daily_profit = _calc_daily_change(pd.Series(bm_profit))
+            bm_daily_profit_list = [round(float(v), 2) for v in bm_daily_profit]
+            out_perform = [round(float(p) - float(b), 2) for p, b in zip(profit, bm_profit)]
+
+            fig.add_trace(go.Scatter(
+                x=portfolio_df["date"], y=bm_profit,
+                mode="lines", name=benchmark_label,
+                line=dict(color="#FF9800", width=2, dash="dash"),
+                customdata=list(zip(bm_daily_profit_list)),
+                hovertemplate="<b>%{x|%Y-%m-%d}</b><br>" +
+                              f"{benchmark_label}累计收益额: %{{y:+,.2f}}元<br>" +
+                              "基准当日收益额: %{customdata[0]:+,.2f}元<br>" +
+                              "<extra></extra>",
+            ))
+
+            # 跑赢基准曲线（默认隐藏）
+            fig.add_trace(go.Scatter(
+                x=portfolio_df["date"], y=out_perform,
+                mode="lines", name=f"跑赢{benchmark_label}",
+                line=dict(color="#9C27B0", width=1.5, dash="dot"),
+                yaxis="y3",
+                hovertemplate="<b>%{x|%Y-%m-%d}</b><br>" +
+                              f"跑赢{benchmark_label}: %{{y:+,.2f}}元<br>" +
+                              "<extra></extra>",
+                visible="legendonly",
+            ))
 
     fig.update_layout(
-        title=dict(text="各标的 收益 vs 风险（气泡大小=权重）", x=0.5, font=dict(size=16)),
-        xaxis_title="最大回撤 (%)",
-        yaxis_title="年化收益率 (%)",
-        template="plotly_white",
-        height=500,
-        hovermode="closest",
-        showlegend=False,
+        title=dict(text=title, x=0.5),
+        xaxis=dict(title=None, tickformat="%Y-%m", showgrid=False, zeroline=False),
+        yaxis=dict(title=None, tickformat=",.2f", showgrid=True, gridcolor="rgba(0,0,0,0.06)",
+                   zeroline=True, zerolinecolor="rgba(0,0,0,0.15)"),
+        yaxis2=dict(title=None, tickformat=",.2f", overlaying="y", side="right",
+                    showgrid=False, zeroline=False, showticklabels=False),
+        yaxis3=dict(title=None, tickformat=",.2f", overlaying="y", side="right",
+                    showgrid=False, zeroline=False, showticklabels=False,
+                    position=0.98),
+        hovermode="x unified",
+        hoverdistance=10,
+        hoverlabel=dict(bgcolor="white", font_size=12, namelength=-1),
+        margin=dict(l=40, r=50, t=40, b=30),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        dragmode=False, height=380,
+        font=dict(size=12),
+        legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
     )
 
     return fig
 
 
-colors_list = [
-    "#00BFFF", "#FF6B6B", "#4ECDC4", "#FFD93D",
-    "#6C5CE7", "#A8E6CF", "#FF8A5C", "#3DC1D3",
-    "#E77F67", "#786FA6",
-]
+def plot_return_rate_curve(
+    portfolio_df: pd.DataFrame,
+    benchmark_label: str = None,
+    benchmark_df: pd.DataFrame = None,
+    title: str = "收益率曲线",
+) -> go.Figure:
+    """收益率随时间曲线，可选叠加基准对比"""
+    fig = go.Figure()
+    return_rate = [round(float(v), 2) for v in portfolio_df["return_rate"]]
+    daily_return = _calc_daily_change(portfolio_df["return_rate"])
+    daily_return_list = [round(float(v), 2) for v in daily_return]
+
+    # 累计收益率曲线（hover时显示当日收益率）
+    fig.add_trace(go.Scatter(
+        x=portfolio_df["date"], y=return_rate,
+        mode="lines", name="累计收益率",
+        line=dict(color="#66BB6A", width=2),
+        fill="tozeroy", fillcolor="rgba(102, 187, 106, 0.05)",
+        customdata=list(zip(daily_return_list)),
+        hovertemplate=(
+            "<b>%{x|%Y-%m-%d}</b><br>" +
+            "累计收益率: %{y:.2f}%<br>" +
+            "当日收益率: %{customdata[0]:+.2f}%<br>" +
+            "<extra></extra>"
+        ),
+    ))
+
+    # 基准对比线
+    if benchmark_label and benchmark_df is not None:
+        aligned_bm_return = _align_to_portfolio_dates(benchmark_df, portfolio_df["date"])
+        if aligned_bm_return is not None:
+            bm_rates = [round(float(v), 2) for v in aligned_bm_return]
+            bm_daily_return = _calc_daily_change(pd.Series(bm_rates))
+            bm_daily_return_list = [round(float(v), 2) for v in bm_daily_return]
+            out_perform = [round(float(p) - float(b), 2) for p, b in zip(return_rate, bm_rates)]
+
+            fig.add_trace(go.Scatter(
+                x=portfolio_df["date"], y=bm_rates,
+                mode="lines", name=benchmark_label,
+                line=dict(color="#FF9800", width=2, dash="dash"),
+                customdata=list(zip(bm_daily_return_list)),
+                hovertemplate="<b>%{x|%Y-%m-%d}</b><br>" +
+                              f"{benchmark_label}累计收益率: %{{y:.2f}}%<br>" +
+                              "基准当日收益率: %{customdata[0]:+.2f}%<br>" +
+                              "<extra></extra>",
+            ))
+
+            # 跑赢基准（默认隐藏）
+            fig.add_trace(go.Scatter(
+                x=portfolio_df["date"], y=out_perform,
+                mode="lines", name=f"跑赢{benchmark_label}",
+                line=dict(color="#9C27B0", width=1.5, dash="dot"),
+                yaxis="y3",
+                hovertemplate="<b>%{x|%Y-%m-%d}</b><br>" +
+                              f"跑赢{benchmark_label}: %{{y:+.2f}}%<br>" +
+                              "<extra></extra>",
+                visible="legendonly",
+            ))
+
+    fig.update_layout(
+        title=dict(text=title, x=0.5),
+        xaxis=dict(title=None, tickformat="%Y-%m", showgrid=False, zeroline=False),
+        yaxis=dict(title=None, tickformat=".2f", showgrid=True, gridcolor="rgba(0,0,0,0.06)",
+                   zeroline=True, zerolinecolor="rgba(0,0,0,0.15)"),
+        yaxis2=dict(title=None, tickformat=".2f", overlaying="y", side="right",
+                    showgrid=False, zeroline=False, showticklabels=False),
+        yaxis3=dict(title=None, tickformat=".2f", overlaying="y", side="right",
+                    showgrid=False, zeroline=False, showticklabels=False,
+                    position=0.98),
+        hovermode="x unified",
+        hoverdistance=10,
+        hoverlabel=dict(bgcolor="white", font_size=12, namelength=-1),
+        margin=dict(l=40, r=50, t=40, b=30),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        dragmode=False, height=380,
+        font=dict(size=12),
+        legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+    )
+
+    return fig

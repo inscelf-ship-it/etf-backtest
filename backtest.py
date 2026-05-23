@@ -1,5 +1,5 @@
 """
-回测引擎模块：支持多标的组合比例定投
+回测引擎模块：支持多标的组合定投/一次性投入
 """
 
 import pandas as pd
@@ -15,18 +15,20 @@ def backtest_multi_dca(
     start_date: str,
     end_date: str,
     dca_day: int = 1,
+    dca_mode: str = "月度定投",
 ) -> dict:
     """
-    多标的组合比例定投回测
+    多标的组合定投/一次性投入回测
 
     参数:
         price_dict: {标的名称: DataFrame(date, close)} 每个标的的价格数据
         weights: {标的名称: 权重(小数)} 权重总和=1
-        total_investment: 定投总资金
-        num_installments: 定投总次数
+        total_investment: 总资金
+        num_installments: 期数（月度/周度定投时有效）
         start_date: 开始日期 YYYY-MM-DD
         end_date: 结束日期 YYYY-MM-DD
-        dca_day: 每月定投日（几号）
+        dca_day: 每月定投日（月度模式有效）
+        dca_mode: "月度定投" | "周定投" | "一次性投入"
 
     返回:
         {
@@ -42,51 +44,94 @@ def backtest_multi_dca(
     if abs(sum(weights.values()) - 1.0) > 0.001:
         raise ValueError(f"权重之和必须为100%，当前为 {sum(weights.values())*100:.1f}%")
 
-    # 每次定投总金额
-    per_installment = total_investment / num_installments
-
-    # ========== 对每个标的分别运行定投 ==========
-    asset_results = {}
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
 
+    # ========== 对每个标的分别运行 ==========
+    asset_results = {}
+
     for asset_name, df in price_dict.items():
         weight = weights[asset_name]
-        # 该标的每次定投金额
-        asset_per_installment = per_installment * weight
+        # 该标的总资金
+        asset_total = total_investment * weight
 
         df = df.copy()
-        # 过滤时间范围
         df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
         if df.empty:
             raise ValueError(f"{asset_name} 在指定时间范围内无数据")
 
-        df["year"] = df["date"].dt.year
-        df["month"] = df["date"].dt.month
+        if dca_mode == "一次性投入":
+            # 首次交易日一次性买入
+            first_valid = df.iloc[0]
+            price = first_valid["close"]
+            if pd.isna(price) or price <= 0:
+                raise ValueError(f"{asset_name} 首日价格无效")
+            shares = asset_total / price
+            total_shares = shares
+            total_cost = asset_total
+            hold_values = []
+            costs = []
+            for idx in df.index:
+                close_price = df.loc[idx, "close"]
+                if pd.notna(close_price) and close_price > 0:
+                    hold_values.append(close_price * total_shares)
+                else:
+                    hold_values.append(0.0)
+                costs.append(total_cost)
+
+            df["hold_value"] = hold_values
+            df["total_cost"] = costs
+            df["shares"] = [total_shares] * len(df)
+            df["return_rate"] = np.where(
+                df["total_cost"] > 0,
+                (df["hold_value"] / df["total_cost"] - 1) * 100,
+                0.0,
+            )
+            df["asset_weight"] = weight
+
+            asset_results[asset_name] = df[
+                ["date", "close", "shares", "hold_value", "total_cost", "return_rate", "asset_weight"]
+            ]
+            continue
+
+        # 定投模式（月度/周度）
+        per_installment = asset_total / num_installments
+
+        if dca_mode == "周定投":
+            df["week"] = df["date"].dt.isocalendar().year.astype(str) + "-W" + df["date"].dt.isocalendar().week.astype(str).str.zfill(2)
+            groups = df.groupby("week", sort=True)
+        else:
+            # 月度定投
+            df["year"] = df["date"].dt.year
+            df["month"] = df["date"].dt.month
+            groups = df.groupby(["year", "month"], sort=True)
 
         total_shares = 0.0
         total_cost = 0.0
         hold_values = []
         costs = []
         shares_history = []
-        invest_dates = []
+        invest_count = 0
 
-        monthly_groups = df.groupby(["year", "month"])
-
-        for (year, month), group in monthly_groups:
-            target_day = pd.Timestamp(year=year, month=month, day=dca_day)
-            invest_day = group[group["date"] >= target_day]
-            if invest_day.empty:
+        for _, group in groups:
+            if dca_mode == "周定投":
+                # 每周最后一个交易日买入
                 invest_row = group.iloc[-1]
             else:
-                invest_row = invest_day.iloc[0]
+                # 月度定投: 找>=定投日的第一个交易日
+                target_day = pd.Timestamp(year=group["date"].iloc[0].year, month=group["date"].iloc[0].month, day=dca_day)
+                invest_day = group[group["date"] >= target_day]
+                if invest_day.empty:
+                    invest_row = group.iloc[-1]
+                else:
+                    invest_row = invest_day.iloc[0]
 
             price = invest_row["close"]
-            if pd.notna(price) and price > 0 and total_cost < asset_per_installment * num_installments:
-                shares_bought = asset_per_installment / price
+            if pd.notna(price) and price > 0 and invest_count < num_installments:
+                shares_bought = per_installment / price
                 total_shares += shares_bought
-                total_cost += asset_per_installment
-                invest_dates.append(invest_row["date"])
+                total_cost += per_installment
+                invest_count += 1
 
             for idx in group.index:
                 close_price = df.loc[idx, "close"]
@@ -112,9 +157,6 @@ def backtest_multi_dca(
         ]
 
     # ========== 构建组合 ==========
-    # 取所有标的日期的并集
-    all_dates = pd.date_range(start=start_ts, end=end_ts, freq="D")
-    # 只保留至少有一个标的交易的日子
     date_set = set()
     for df in asset_results.values():
         date_set.update(df["date"].dt.date)
@@ -147,12 +189,11 @@ def backtest_multi_dca(
     total_value_final = portfolio_df["hold_value"].iloc[-1]
     final_return = portfolio_df["return_rate"].iloc[-1]
 
-    # 年化收益
     days = (portfolio_df["date"].iloc[-1] - portfolio_df["date"].iloc[0]).days
     years = days / 365.25 if days > 0 else 0
     if years > 0 and total_cost_final > 0:
         cagr = (1 + final_return / 100) ** (1 / years) - 1
-        cagr = cagr * 100
+        cagr *= 100
     else:
         cagr = 0.0
 
@@ -161,7 +202,7 @@ def backtest_multi_dca(
     drawdown = ((portfolio_df["hold_value"] - running_max) / running_max)
     max_dd = abs(drawdown.min()) * 100 if not drawdown.empty else 0.0
 
-    # 夏普比率（用组合每日收益率）
+    # 夏普比率
     portfolio_df["daily_return"] = portfolio_df["hold_value"].pct_change() * 100
     daily_returns = portfolio_df["daily_return"].dropna()
     if len(daily_returns) > 1 and daily_returns.std() > 0:
@@ -184,7 +225,6 @@ def backtest_multi_dca(
             ret = (last["hold_value"] / last["total_cost"] - 1)
             asset_cagr = (1 + ret) ** (1 / yrs) - 1
 
-        # 该标的自身最大回撤
         amax = df["hold_value"].cummax()
         add = ((df["hold_value"] - amax) / amax)
         amax_dd = abs(add.min()) * 100 if not add.empty else 0.0
@@ -207,14 +247,14 @@ def backtest_multi_dca(
         "最大回撤%": round(max_dd, 2),
         "夏普比率": round(sharpe, 4),
         "定投总次数": num_installments,
-        "每期定投额": round(per_installment, 2),
+        "每期定投额": round(per_installment if dca_mode != "一次性投入" else 0, 2),
         "持有天数": days,
         "年数": round(years, 2),
         "标的数量": len(price_dict),
+        "策略": dca_mode,
         "资产明细": asset_final,
     }
 
-    # 添加回撤曲线到portfolio_df
     portfolio_df["drawdown"] = drawdown * 100 if not drawdown.empty else 0.0
 
     return {

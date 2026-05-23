@@ -1,10 +1,22 @@
+---
+title: ETF 组合定投回测工具
+emoji: 📊
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.28.0
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # 📊 ETF / 基金数据回测工具
 
 一个基于 Streamlit 的在线 ETF 回测工具，支持**多标的组合比例定投**策略。
 
 ## 🚀 在线体验
 
-[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face%20Spaces-blue)](https://huggingface.co/spaces/inscelf-ship-it/etf-backtest)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face%20Spaces-blue)](https://huggingface.co/spaces/konatos/etf-backtest)
 
 ## ✨ 功能
 
@@ -27,41 +39,66 @@ streamlit run app.py
 ## 🌐 部署到 Hugging Face Spaces（国内可访问，免费）
 
 ### 前提
-1. 拥有 [GitHub](https://github.com) 账号
-2. 注册 [Hugging Face](https://huggingface.co) 账号
+1. 注册 [Hugging Face](https://huggingface.co) 账号
 
 ### 部署步骤
 
-1. **在 GitHub 创建仓库**，上传本项目所有文件
-   - 本项目已托管在 https://github.com/inscelf-ship-it/etf-backtest
-
-2. **登录 Hugging Face**
-   - 访问 https://huggingface.co
-   - 点击右上角 **"Sign Up"** 注册（可用 GitHub 或 Google 登录）
-
-3. **创建 Space**
+1. **创建 Space**
+   - 登录 Hugging Face
    - 点击右上角头像 → **"New Space"**
    - 填写：
      - **Space Name**: `etf-backtest`
      - **License**: 选择 `MIT`
      - **SDK**: 选择 **Streamlit**
-   - 在 **"Link GitHub Repository"** 处勾选并输入：
-     - `inscelf-ship-it/etf-backtest`
-   - 点击底部 **"Create Space"**
+     - **Space Hardware**: 选择 **CPU basic**（免费）
+   - 点击 **"Create Space"**
+
+2. **上传代码**
+   - 在 Space 页面中，点击 **"Files"** 选项卡
+   - 点击 **"Add file"** → **"Upload files"**
+   - 拖拽或选择所有 `.py` 文件和 `requirements.txt` 上传
+
+3. **或者使用命令上传**
+   ```bash
+   pip install huggingface_hub
+   python hf_upload.py
+   ```
 
 4. **等待部署完成**（约2-5分钟）
-   - Hugging Face 会自动从 GitHub 拉取代码并部署
-   - 部署完成后访问地址为：
-     `https://inscelf-ship-it-etf-backtest.hf.space`
+   - 访问：`https://konatos-etf-backtest.hf.space`
+
+### ⚠️ 重要：如果页面显示 Welcome
+
+如果部署完成后页面仍然显示 Hugging Face 的欢迎页面，请按以下步骤排查：
+
+1. **检查 Space 设置**
+   - 点击 Space 页面顶部的 **Settings** ⚙️ 标签
+   - 确认 **SDK** 选择为 **Streamlit**
+   - 确认 **App file** 填写为 `app.py`
+
+2. **手动重启**
+   - 点击右上角的 **⋮** (更多) 菜单
+   - 选择 **"Restart this Space"**
+
+3. **查看构建日志**
+   - 点击 **"Factory"** 或 **"Builder"** 标签
+   - 查看最新构建的输出，检查是否有报错
+
+4. **删除 Dockerfile（如存在）**
+   - 如果 Space 有 Dockerfile，HF 会尝试用 Docker 构建
+   - 建议：在 Space 的 **Settings** 中将 SDK 设为 **Streamlit**，HF 会自动忽略 Dockerfile
 
 ## 📁 项目结构
 
 ```
 fund_backtest/
-├── app.py              # Streamlit 主界面
+├── app.py              # Streamlit 主界面（HF Spaces 入口）
 ├── data_fetcher.py     # 数据获取（akshare）
 ├── backtest.py         # 回测引擎（定投 + 一次性）
 ├── metrics.py          # 指标计算
 ├── charts.py           # 可视化图表（Plotly）
+├── streamlit_app.py    # 备选入口（streamlit_app.py → app.main()）
+├── hf_upload.py        # HF Spaces 上传脚本
 ├── requirements.txt    # Python 依赖
+├── Dockerfile          # Docker 部署配置（可选）
 └── README.md           # 本文件
