@@ -1,85 +1,159 @@
 """
-数据获取模块：使用 akshare 获取ETF/基金历史行情数据
+数据获取模块：支持ETF/指数历史行情数据
+支持 A股ETF、海外ETF、A股指数 等多类型标的
 """
 
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
+from typing import Optional
 
 
-def get_etf_history(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+# ============================================================
+# 可用标的数据库（按分类组织）
+# ============================================================
+# type: "etf" = ETF基金 (使用 akshare fund_etf_hist_em)
+#       "index" = A股股票指数 (使用 akshare stock_zh_index_daily)
+# market: 仅用于 index 类型，"sh"或"sz"
+ASSETS_DB = {
+    # ---- A股宽基 ----
+    "沪深300ETF(510300)":        {"code": "510300", "type": "etf", "category": "A股宽基"},
+    "中证500ETF(510500)":        {"code": "510500", "type": "etf", "category": "A股宽基"},
+    "上证50ETF(510050)":         {"code": "510050", "type": "etf", "category": "A股宽基"},
+    "创业板ETF(159915)":         {"code": "159915", "type": "etf", "category": "A股宽基"},
+    "科创50ETF(588000)":         {"code": "588000", "type": "etf", "category": "A股宽基"},
+    "中证1000ETF(512100)":      {"code": "512100", "type": "etf", "category": "A股宽基"},
+    "中证2000ETF(563300)":      {"code": "563300", "type": "etf", "category": "A股宽基"},
+    "科创100ETF(588190)":       {"code": "588190", "type": "etf", "category": "A股宽基"},
+    # ---- A股策略/红利 ----
+    "中证红利ETF(515080)":      {"code": "515080", "type": "etf", "category": "策略红利"},
+    "红利低波ETF(512890)":      {"code": "512890", "type": "etf", "category": "策略红利"},
+    "红利ETF(510880)":          {"code": "510880", "type": "etf", "category": "策略红利"},
+    "自由现金流ETF(159585)":    {"code": "159585", "type": "etf", "category": "策略红利"},
+    "基本面50ETF(512750)":      {"code": "512750", "type": "etf", "category": "策略红利"},
+    "沪深300价值ETF(562320)":   {"code": "562320", "type": "etf", "category": "策略红利"},
+    # ---- 海外指数(QDII-ETF) ----
+    "标普500ETF(513500)":       {"code": "513500", "type": "etf", "category": "海外指数"},
+    "纳指ETF(513100)":          {"code": "513100", "type": "etf", "category": "海外指数"},
+    "日经225ETF(513000)":       {"code": "513000", "type": "etf", "category": "海外指数"},
+    "日经225ETF(513880)":       {"code": "513880", "type": "etf", "category": "海外指数"},
+    "德国ETF(513030)":          {"code": "513030", "type": "etf", "category": "海外指数"},
+    "法国CAC40ETF(513080)":     {"code": "513080", "type": "etf", "category": "海外指数"},
+    "恒生ETF(159920)":         {"code": "159920", "type": "etf", "category": "海外指数"},
+    "中概互联ETF(513050)":      {"code": "513050", "type": "etf", "category": "海外指数"},
+    "东南亚科技ETF(513730)":    {"code": "513730", "type": "etf", "category": "海外指数"},
+    # ---- A股行业/主题 ----
+    "证券ETF(512880)":          {"code": "512880", "type": "etf", "category": "行业主题"},
+    "医药ETF(512010)":          {"code": "512010", "type": "etf", "category": "行业主题"},
+    "消费ETF(159928)":          {"code": "159928", "type": "etf", "category": "行业主题"},
+    "科技ETF(515000)":          {"code": "515000", "type": "etf", "category": "行业主题"},
+    "新能源ETF(515030)":        {"code": "515030", "type": "etf", "category": "行业主题"},
+    "半导体ETF(512480)":        {"code": "512480", "type": "etf", "category": "行业主题"},
+    "军工ETF(512660)":          {"code": "512660", "type": "etf", "category": "行业主题"},
+    "黄金ETF(518880)":          {"code": "518880", "type": "etf", "category": "行业主题"},
+    # ---- A股指数（直接跟踪指数本身）----
+    "沪深300指数(000300)":      {"code": "000300", "type": "index", "market": "sh", "category": "A股指数"},
+    "中证500指数(000905)":      {"code": "000905", "type": "index", "market": "sh", "category": "A股指数"},
+    "上证50指数(000016)":       {"code": "000016", "type": "index", "market": "sh", "category": "A股指数"},
+    "创业板指(399006)":         {"code": "399006", "type": "index", "market": "sz", "category": "A股指数"},
+    "中证红利指数(000922)":     {"code": "000922", "type": "index", "market": "sh", "category": "A股指数"},
+    "科创50指数(000688)":       {"code": "000688", "type": "index", "market": "sh", "category": "A股指数"},
+}
+
+
+def list_available_assets() -> dict:
+    """返回完整标的数据库"""
+    return ASSETS_DB
+
+
+def list_assets_by_category() -> dict:
+    """按分类返回标的列表"""
+    categories = {}
+    for name, info in ASSETS_DB.items():
+        cat = info["category"]
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append({"name": name, **info})
+    return categories
+
+
+def get_asset_history(
+    asset_name: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
     """
-    获取ETF历史净值/价格数据
+    根据标的名称获取历史价格数据
 
     参数:
-        symbol: ETF代码，如 '510300'（沪深300ETF）
+        asset_name: 标的显示名称（如 "沪深300ETF(510300)"）
         start_date: 开始日期 'YYYYMMDD'
         end_date: 结束日期 'YYYYMMDD'
 
     返回:
-        DataFrame 包含日期和复权净值/价格
+        DataFrame 包含 date, close 列
     """
+    if asset_name not in ASSETS_DB:
+        raise ValueError(f"未知标的: {asset_name}")
+
+    info = ASSETS_DB[asset_name]
+    asset_type = info["type"]
+
+    if asset_type == "etf":
+        return _get_etf_data(info["code"], start_date, end_date)
+    elif asset_type == "index":
+        market = info["market"]
+        return _get_index_data(info["code"], market, start_date, end_date)
+    else:
+        raise ValueError(f"不支持的资产类型: {asset_type}")
+
+
+def _get_etf_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """获取ETF历史数据"""
     try:
-        # 获取ETF历史数据（包含复权因子）
         df = ak.fund_etf_hist_em(
             symbol=symbol,
             period="daily",
             start_date=start_date,
             end_date=end_date,
-            adjust="qfq",  # 前复权
+            adjust="qfq",
         )
-
         if df is None or df.empty:
             raise ValueError(f"未获取到 {symbol} 的数据")
-
-        # 标准化列名
-        df = df.rename(
-            columns={
-                "日期": "date",
-                "收盘": "close",
-                "开盘": "open",
-                "最高": "high",
-                "最低": "low",
-                "成交量": "volume",
-            }
-        )
+        df = df.rename(columns={"日期": "date", "收盘": "close"})
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
-
-        return df[["date", "close", "open", "high", "low", "volume"]]
-
+        return df[["date", "close"]]
     except Exception as e:
         raise RuntimeError(f"获取ETF数据失败 [{symbol}]: {str(e)}")
 
 
-def list_available_etfs() -> list:
-    """
-    获取常见宽基ETF列表（部分热门）
-    """
-    etfs = [
-        {"code": "510300", "name": "沪深300ETF"},
-        {"code": "510500", "name": "中证500ETF"},
-        {"code": "510050", "name": "上证50ETF"},
-        {"code": "159915", "name": "创业板ETF"},
-        {"code": "588000", "name": "科创50ETF"},
-        {"code": "512100", "name": "中证1000ETF"},
-        {"code": "513100", "name": "纳指ETF"},
-        {"code": "159941", "name": "纳指ETF"},
-        {"code": "513050", "name": "中概互联ETF"},
-        {"code": "159920", "name": "恒生ETF"},
-        {"code": "510310", "name": "沪深300ETF易方达"},
-        {"code": "512880", "name": "证券ETF"},
-        {"code": "159949", "name": "创业板50ETF"},
-        {"code": "515000", "name": "科技ETF"},
-        {"code": "512010", "name": "医药ETF"},
-        {"code": "159928", "name": "消费ETF"},
-        {"code": "518880", "name": "黄金ETF"},
-    ]
-    return etfs
+def _get_index_data(symbol: str, market: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """获取A股指数历史数据"""
+    try:
+        full_symbol = f"{market}{symbol}"
+        df = ak.stock_zh_index_daily(symbol=full_symbol)
+        if df is None or df.empty:
+            raise ValueError(f"未获取到 {symbol} 的数据")
+        df = df.rename(columns={"date": "date"})
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").reset_index(drop=True)
+
+        # 过滤日期范围
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
+
+        if df.empty:
+            raise ValueError(f"在指定日期范围内无数据")
+
+        return df[["date", "close"]]
+    except Exception as e:
+        raise RuntimeError(f"获取指数数据失败 [{symbol}]: {str(e)}")
 
 
 if __name__ == "__main__":
     # 简单测试
-    df = get_etf_history("510300", "20230101", "20231231")
+    df = get_asset_history("沪深300ETF(510300)", "20230101", "20231231")
     print(df.head())
-    print(f"\n共 {len(df)} 个交易日")
+    print(f"共 {len(df)} 个交易日")
