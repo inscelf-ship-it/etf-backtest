@@ -120,21 +120,20 @@ with col_left:
         st.divider()
 
         # Weights (simple equal-weight input)
-        equal_weight = 100.0 / len(selected_assets)
-        weight_key = "weights_initialized"
-        if weight_key not in st.session_state:
-            st.session_state[weight_key] = False
-        if not st.session_state[weight_key]:
-            for asset in selected_assets:
-                key = f"w_{asset}"
-                if key not in st.session_state:
-                    st.session_state[key] = equal_weight
-
-        total_w = 0
+        n_assets = len(selected_assets)
+        
+        # Init session_state weights if needed
         for asset in selected_assets:
-            v = st.number_input(asset, key=f"w_{asset}", min_value=0.0, max_value=100.0,
-                                value=st.session_state.get(f"w_{asset}", equal_weight), step=1.0, format="%.0f")
-            total_w = sum(st.session_state.get(f"w_{a}", 0) for a in selected_assets)
+            if f"w_{asset}" not in st.session_state:
+                st.session_state[f"w_{asset}"] = 100.0 / n_assets
+
+        # Show weight inputs
+        for asset in selected_assets:
+            st.number_input(asset, key=f"w_{asset}", min_value=0.0, max_value=100.0,
+                            step=1.0, format="%.0f")
+
+        # Calculate total weight from current widget values
+        total_w = sum(st.session_state.get(f"w_{a}", 0) for a in selected_assets)
 
         if total_w > 0:
             ok = abs(total_w - 100) < 0.1
@@ -143,20 +142,18 @@ with col_left:
                 if st.button("归一化"):
                     for a in selected_assets:
                         st.session_state[f"w_{a}"] = round(st.session_state[f"w_{a}"] / total_w * 100, 1)
-                    st.session_state[weight_key] = True
                     st.rerun()
 
         if total_w > 0:
             actual_weights = {a: st.session_state[f"w_{a}"] / total_w for a in selected_assets}
         else:
-            actual_weights = {a: 1.0 / len(selected_assets) for a in selected_assets}
+            actual_weights = {a: 1.0 / n_assets for a in selected_assets}
 
         st.divider()
 
         run = st.button("🚀 开始回测", type="primary", use_container_width=True)
         if run:
             st.session_state.has_run = True
-            st.rerun()
 
 # ===== Right panel =====
 with col_right:
