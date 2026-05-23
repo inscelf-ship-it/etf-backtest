@@ -327,25 +327,146 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---- 彩蛋：纯 Streamlit 原生按钮（z-index不遮挡任何内容） ----
-if st.button("🎁", key="egg_btn", help="彩蛋", use_container_width=True):
-    st.session_state.egg_open = not st.session_state.get("egg_open", False)
+# ---- 彩蛋：邮箱触发→图片→点击图片弹出周围弹幕 ---- 
+import base64 as _b64, json as _json
+_egg_img_path = _pl_pathlib.Path(__file__).parent / "egg.jpg"
+_egg_img_b64 = _b64.b64encode(_egg_img_path.read_bytes()).decode() if _egg_img_path.exists() else ""
 
-if st.session_state.get("egg_open", False):
-    st.markdown("""
-    <div style="text-align:center; margin:8px 0;">
-        <div style="
-            display:inline-block;
-            background:linear-gradient(135deg,#1a1a2e,#16213e);
-            border-radius:16px; padding:24px 32px;
-            text-align:center; box-shadow:0 4px 16px rgba(0,0,0,.3);
-        ">
-            <div style="font-size:40px; line-height:1.3;">✨<br>🐱🎀</div>
-            <div style="color:#FFD700; font-size:17px; margin:10px 0 6px;">🐱 克里斯蒂娜喵~ 🐱</div>
-            <div style="color:#9CA3AF; font-size:13px;">El. Psy. Kongroo.</div>
-        </div>
+_egg_q = [
+    "这、这可不是为了你才做的！", "谁是助手啊！", "不准叫我克里斯蒂娜！",
+    "你是笨蛋吗？还是快死了？", "别一本正经地说中二台词啊！", "我只是稍微有点在意而已。",
+    "哼，我才没有担心你。", "你那贫弱的大脑终于开始运转了吗？", "妄想也该有个限度吧。",
+    "真拿你没办法……", "世界又不是围着你转的。", "这、这种事情我怎么可能会高兴啊！",
+    "少得意忘形了。", "你的逻辑漏洞多到让我头疼。", "别靠这么近！",
+    "我只是出于科学兴趣才帮你的。", "你脑子里的电波能不能停一下？", "才不是因为喜欢你才留下来的。",
+    "真是个让人操心的家伙。", "哼，下次可别指望我还会帮你。",
+    "不要叫我克里斯蒂娜！！你这个笨蛋变态中二病！！", "我才没有脸红！这只是物理现象！",
+    "让我来帮助你就直说，何必拐弯抹角的。", "哼，勉强夸你一句，可别得意忘形啊。",
+    "你……你这种态度，会让人误会的！", "真搞不懂，为什么我非得陪你做这种蠢事……",
+    "不管在哪条世界线，你都不是一个人。不管在哪条世界线，我都一定会找到你。",
+    "未来是没有人能预测的，是无法重来的。正因如此，人们才能接受各种痛苦、不幸与飞来横祸，迈步前进。",
+    "时间根据每个人的主观感受，既会变长，也会变短。相对论真是既浪漫又伤感的东西呢。",
+    "不要想一味的改变现在，这只会让过去变得面目全非罢了。",
+    "无论发生什么，只要你相信自己，就一定能够克服困难。", "过去的事情无法改变，但我们可以选择如何面对它。",
+    "……我只是在陈述事实而已，别想太多了！", "我可没有在担心你，只是顺便看看而已！",
+    "你以为这样就能敷衍过去吗？太天真了！", "听好了！这只是科学上的必然结果，才不是因为你！",
+    "开什么玩笑！我可是认真在讨论的！", "不要擅自在那里自以为了解我！",
+    "如果你只是想来嘲讽我的话，请回吧。", "我都说了，不要随便决定别人的事情！",
+]
+_egg_q_json = _json.dumps(_egg_q, ensure_ascii=False)
+
+st.components.v1.html(f"""
+<div style="text-align:center; padding:4px 0 16px 0;">
+  <!-- 尾端正中邮箱触发器 -->
+  <span id="egg-trigger" style="color:#9CA3AF; font-size:0.8rem; cursor:pointer;
+    text-decoration:underline; text-underline-offset:2px; opacity:0.6;
+    transition:opacity .2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+    ✉️ kris@lab.member
+  </span>
+</div>
+
+<!-- 图片容器（有额外空间给弹幕出现在图片周围） -->
+<div id="egg-box" style="display:none; margin:0 auto 12px auto; max-width:600px; position:relative;">
+  <!-- 弹幕区域：图片周围的padding空间，弹幕不会挡住图片 -->
+  <div id="egg-arena" style="position:relative; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.25); padding:0; background:transparent;">
+    <img id="egg-img" src="data:image/jpeg;base64,{_egg_img_b64}" style="width:100%; display:block; border-radius:10px; position:relative; z-index:2; cursor:pointer;">
+    <!-- 关闭按钮 -->
+    <div style="position:absolute; top:8px; right:12px; z-index:10;">
+      <button id="egg-close-btn" style="background:rgba(0,0,0,.5); color:#fff; border:none; border-radius:50%; width:28px; height:28px; font-size:16px; cursor:pointer; line-height:28px; text-align:center;">✕</button>
     </div>
-    """, unsafe_allow_html=True)
-    if st.button("✕ 关闭彩蛋", key="egg_close", use_container_width=True):
-        st.session_state.egg_open = False
-        st.rerun()
+  </div>
+</div>
+
+<script>
+(function(){{
+  var quotes = {_egg_q_json};
+  var trigger = document.getElementById('egg-trigger');
+  var box = document.getElementById('egg-box');
+  var img = document.getElementById('egg-img');
+  var arena = document.getElementById('egg-arena');
+  var closeBtn = document.getElementById('egg-close-btn');
+  if(!trigger||!box||!img||!arena) return;
+
+  var visible = false;
+  var active = 0;
+  var MAX_DM = 20;
+  var colors = ['#FFD700','#FF6B6B','#00E5FF','#69F0AE','#FF4081','#E040FB','#40C4FF','#FFD740','#FFAB40','#B388FF'];
+
+  function toggle() {{
+    visible = !visible;
+    box.style.display = visible ? 'block' : 'none';
+    if(!visible) {{ var els = arena.querySelectorAll('.dm-el'); for(var i=0;i<els.length;i++) els[i].remove(); active=0; }}
+  }}
+
+  trigger.onclick = toggle;
+  if(closeBtn) closeBtn.onclick = function(e){{ e.stopPropagation(); if(visible) toggle(); }};
+
+  img.onclick = function(e) {{
+    if(active >= MAX_DM) return;
+    var text = quotes[Math.floor(Math.random() * quotes.length)];
+    var color = colors[Math.floor(Math.random() * colors.length)];
+    var el = document.createElement('div');
+    el.className = 'dm-el';
+    
+    // 弹幕出现在图片周围，不在图片上
+    // 计算点击位置相对于图片的比例
+    var rect = img.getBoundingClientRect();
+    var rx = (e.clientX - rect.left) / rect.width;  // 0-1
+    var ry = (e.clientY - rect.top) / rect.height;   // 0-1
+    
+    // 围绕图片边界放置弹幕：上下左右
+    // 如果点击在中心区域（0.3-0.7），随机选择边界
+    var side;
+    if(rx < 0.25) side = 'left';
+    else if(rx > 0.75) side = 'right';
+    else if(ry < 0.3) side = 'top';
+    else if(ry > 0.7) side = 'bottom';
+    else side = ['top','bottom','left','right'][Math.floor(Math.random()*4)];
+    
+    var arenaRect = arena.getBoundingClientRect();
+    var arenaW = arenaRect.width;
+    var arenaH = arenaRect.height;
+    
+    // 元素先挂到arena上，位置按相对于arena的百分比
+    arena.appendChild(el);
+    
+    // 文字尺寸估计：每个字约14px
+    var textW = text.length * 8 + 20;
+    // 随机偏移避免重叠
+    var randOff = (Math.random() - 0.5) * 60;
+    
+    var leftPct, topPct;
+    if(side === 'top') {{
+      leftPct = Math.min(90, Math.max(2, rx * 100 + randOff * 0.5));
+      topPct = -8 + Math.random() * 3;  // 图片上方
+    }} else if(side === 'bottom') {{
+      leftPct = Math.min(90, Math.max(2, rx * 100 + randOff * 0.5));
+      topPct = 100 + Math.random() * 3;  // 图片下方
+    }} else if(side === 'left') {{
+      leftPct = -textW/arenaW*100 - 2 - Math.random() * 5;  // 图片左侧
+      topPct = Math.min(90, Math.max(5, ry * 100 + randOff * 0.5));
+    }} else {{ // right
+      leftPct = 100 + 2 + Math.random() * 5;  // 图片右侧
+      topPct = Math.min(90, Math.max(5, ry * 100 + randOff * 0.5));
+    }}
+    
+    el.textContent = text;
+    el.style.cssText = 'position:absolute; left:'+leftPct+'%; top:'+topPct+'%; '+
+      'font-size:13px; font-weight:bold; color:'+color+'; '+
+      'text-shadow:0 0 4px rgba(0,0,0,.8),0 0 2px rgba(0,0,0,.6); '+
+      'white-space:nowrap; z-index:5; opacity:1; transition:opacity 0.5s; '+
+      'pointer-events:none;';
+    active++;
+
+    // 3秒后淡出
+    setTimeout(function() {{
+      el.style.opacity = '0';
+      setTimeout(function() {{
+        if(el.parentNode) el.parentNode.removeChild(el);
+        active--;
+      }}, 500);
+    }}, 3000);
+  }};
+}})();
+</script>
+""", height=70, scrolling=False)
