@@ -321,48 +321,30 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---- 彩蛋：纯 Streamlit + CSS overlay（零 JS，兼容所有部署平台） ----
-# 点击 footer 中的按钮触发 CSS position:fixed 全屏遮罩
-_, footer_col = st.columns([7, 5])
-with footer_col:
-    egg_clicked = st.button("🎁 联系我：frostbitem@foxmail.com 🎁", key="egg_footer",
-                             help="点击打开彩蛋", use_container_width=True)
-
-# 彩蛋状态管理
-if "egg_open" not in st.session_state:
-    st.session_state.egg_open = False
-if egg_clicked:
-    st.session_state.egg_open = not st.session_state.egg_open
-
-# 当 egg_open 为 True 时，渲染 CSS fixed 全屏遮盖
-if st.session_state.egg_open:
-    # 渲染遮罩 + 弹窗（纯 CSS，无 JS）
-    st.markdown("""
-    <div id="egg-overlay" style="
-        position:fixed; top:0; left:0; width:100%; height:100%;
-        background:rgba(0,0,0,0.75); z-index:99999;
-        display:flex; justify-content:center; align-items:center;
-    ">
-      <div style="
-          background:linear-gradient(135deg,#1a1a2e,#16213e);
-          border-radius:16px; padding:32px 40px; max-width:420px;
-          text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.6);
-          position:relative;
-      ">
-        <div style="font-size:48px; line-height:1.4; margin:8px 0;">✨<br>🐱🎀</div>
-        <div style="color:#FFD700; font-size:18px; margin:12px 0 8px;">🐱 克里斯蒂娜喵~ 🐱</div>
-        <div style="color:#9CA3AF; font-size:13px;">El. Psy. Kongroo.</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    _, close_col = st.columns([3, 1])
-    with close_col:
-        if st.button("✕ 关闭", key="egg_close", use_container_width=True):
-            st.session_state.egg_open = False
-            st.rerun()
-
 # Footer text
 st.markdown(
     f'<div class="footer">🛠️ <strong>makeby 牧濑红莉栖 & Cline</strong> &nbsp;|&nbsp; 今日 {_today_visitors} 次 &nbsp;·&nbsp; 累计 {_total_visitors} 次</div>',
     unsafe_allow_html=True,
 )
+
+# ---- 彩蛋：页面底部显示（零 overlay，零兼容问题） ----
+_, egg_col = st.columns([9, 1])
+with egg_col:
+    if st.button("🎁", key="egg_trigger_btn", help="打开彩蛋", use_container_width=True):
+        st.session_state.egg_open = not st.session_state.get("egg_open", False)
+
+if st.session_state.get("egg_open", False):
+    st.markdown("""
+    <div style="
+        background:linear-gradient(135deg,#1a1a2e,#16213e);
+        border-radius:16px; padding:24px 32px; max-width:400px; margin:8px auto;
+        text-align:center; box-shadow:0 4px 16px rgba(0,0,0,.3);
+    ">
+        <div style="font-size:40px; line-height:1.3;">✨<br>🐱🎀</div>
+        <div style="color:#FFD700; font-size:17px; margin:10px 0 6px;">🐱 克里斯蒂娜喵~ 🐱</div>
+        <div style="color:#9CA3AF; font-size:13px;">El. Psy. Kongroo.</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("✕ 关闭", key="egg_close_btn", use_container_width=True):
+        st.session_state.egg_open = False
+        st.rerun()
