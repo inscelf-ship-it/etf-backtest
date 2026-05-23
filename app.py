@@ -37,6 +37,8 @@ st.markdown("""
     div[data-testid="stMetricLabel"] { font-size: 0.75rem; }
     div[data-testid="stHorizontalRadio"] label { font-size: 0.9rem; font-weight: 600; padding: 0.4rem 1.2rem; }
     div[data-testid="stHorizontalRadio"] { gap: 0.2rem; }
+    #egg-trigger { cursor: pointer; text-decoration: none; border-bottom: 1px dashed #9CA3AF; }
+    #egg-trigger:hover { color: #FF6B6B; border-bottom-color: #FF6B6B; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -320,155 +322,106 @@ st.markdown(
     '⚠️ <strong>免责声明</strong>：投资有风险，本工具仅为历史数据回测，不构成任何投资建议，不对数据准确性及未来收益负责。</div>',
     unsafe_allow_html=True,
 )
+
+# ---- 彩蛋：纯前端 emoji 弹窗 + 弹幕，无本地依赖 ----
 st.markdown(
-    f'<div class="footer">🛠️ <strong>makeby 牧濑红莉栖 & Cline</strong> &nbsp;|&nbsp; 联系我：frostbitem@foxmail.com 🎁 &nbsp;|&nbsp; 今日 {_today_visitors} 次 &nbsp;·&nbsp; 累计 {_total_visitors} 次</div>',
+    f'<div class="footer">🛠️ <strong>makeby 牧濑红莉栖 & Cline</strong> &nbsp;|&nbsp; <span id="egg-trigger">🎁 联系我：frostbitem@foxmail.com 🎁</span> &nbsp;|&nbsp; 今日 {_today_visitors} 次 &nbsp;·&nbsp; 累计 {_total_visitors} 次</div>',
     unsafe_allow_html=True,
 )
 
-# ---- 彩蛋：点击联系我弹图，点击图片发弹幕 ----
-# 思路：st.components.v1.html 与主页面同源，JS 可操作 parent.document 添加弹窗和弹幕
-import base64 as _b64, pathlib as _pl
-_egg_path = _pl.Path(r"C:\Users\F\Desktop\微信图片_20260523225733.jpg")
-_b64str = _b64.b64encode(_egg_path.read_bytes()).decode() if _egg_path.exists() else ""
-if _egg_path.exists():
-    st.components.v1.html(f"""
-<div id="egg-iframe-root"></div>
+st.components.v1.html("""
+<div id="egg-root"></div>
 <script>
-(function(){{
+(function(){
   var doc = window.parent.document;
 
-  // 1. 注入CSS
+  // 1. 注入 CSS
   var style = doc.createElement('style');
   style.textContent = `
-#egg-modal-ov {{
+#egg-modal {
   display:none; position:fixed; z-index:999999; left:0; top:0;
   width:100%; height:100%; background:rgba(0,0,0,.75);
   justify-content:center; align-items:center;
-}}
-#egg-modal-ov .egg-box {{
-  position:relative; display:inline-block; max-width:90vw; max-height:90vh;
-}}
-#egg-modal-ov .egg-box img {{
-  max-width:90vw; max-height:90vh; border-radius:12px;
-  box-shadow:0 8px 32px rgba(0,0,0,.5); cursor:pointer;
-  display:block;
-  user-select:none; -webkit-user-drag:none;
-}}
-#egg-modal-ov .egg-close {{
-  position:absolute; top:-36px; right:0; color:#fff; font-size:28px;
-  cursor:pointer; opacity:.7; transition:opacity .2s;
-}}
-#egg-modal-ov .egg-close:hover {{ opacity:1; }}
-#dm-wrap {{
+}
+#egg-modal .egg-box {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border-radius:16px; padding:24px 32px; max-width:420px;
+  text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.6);
+  position:relative;
+}
+#egg-modal .egg-close {
+  position:absolute; top:8px; right:14px; color:#aaa; font-size:24px;
+  cursor:pointer; transition:color .2s;
+}
+#egg-modal .egg-close:hover { color:#fff; }
+#egg-modal .egg-art { font-size:48px; line-height:1.4; margin:12px 0; }
+#egg-modal .egg-text { color:#FFD700; font-size:16px; margin:8px 0 4px; }
+#egg-modal .egg-sub { color:#aaa; font-size:12px; }
+#dm-wrap {
   position:fixed; top:0; left:0; width:100%; height:100%;
   pointer-events:none; overflow:hidden; z-index:999999;
-}}
-.dm-item {{
-  position:fixed;
-  font-size:1.4rem; font-weight:bold; color:#FFD700;
-  text-shadow:0 0 10px #000,0 0 5px #000;
-  white-space:nowrap;
-  animation:dm-up 3s ease-out forwards;
-  pointer-events:none;
-}}
-@keyframes dm-up {{
-  0% {{ opacity:1; transform:translateY(0); }}
-  80% {{ opacity:1; }}
-  100% {{ opacity:0; transform:translateY(-60px); }}
-}}
+}
+.dm-item {
+  position:fixed; font-size:1.4rem; font-weight:bold; color:#FFD700;
+  text-shadow:0 0 10px #000,0 0 5px #000; white-space:nowrap;
+  animation:dm-up 3s ease-out forwards; pointer-events:none;
+}
+@keyframes dm-up {
+  0% { opacity:1; transform:translateY(0); }
+  80% { opacity:1; }
+  100% { opacity:0; transform:translateY(-60px); }
+}
   `;
   doc.head.appendChild(style);
 
-  // 2. 找到主页面footer里的"联系我"文字所在的元素
-  var allEls = doc.querySelectorAll('.footer');
-  var triggerEl = null;
-  for (var i = 0; i < allEls.length; i++) {{
-    if (allEls[i].textContent.indexOf('联系我') !== -1) {{
-      triggerEl = allEls[i];
-      break;
-    }}
-  }}
-  if (!triggerEl) return;
-  // 把包含"联系我"的文本用 span 包裹
-  triggerEl.innerHTML = triggerEl.innerHTML.replace(
-    '联系我：frostbitem@foxmail.com 🎁',
-    '<span id="egg-trigger" style="cursor:pointer;text-decoration:none;">联系我：frostbitem@foxmail.com 🎁</span>'
-  );
-  var triggerSpan = doc.getElementById('egg-trigger');
-
-  // 3. 创建弹窗DOM
+  // 2. 注入弹窗 DOM
   var modal = doc.createElement('div');
-  modal.id = 'egg-modal-ov';
-  modal.onclick = function(e) {{ if (e.target.id === 'egg-modal-ov') this.style.display = 'none'; }};
+  modal.id = 'egg-modal';
+  modal.onclick = function(e) { if (e.target.id === 'egg-modal') this.style.display = 'none'; };
   modal.innerHTML =
     '<div class="egg-box">' +
       '<span class="egg-close" id="egg-close-btn">&times;</span>' +
-      '<img src="data:image/jpeg;base64,{_b64str}" id="egg-img" />' +
+      '<div class="egg-art">✨<br>🐱🎀</div>' +
+      '<div class="egg-text">🐱 克里斯蒂娜喵~ 🐱</div>' +
+      '<div class="egg-sub">👆 点我发送弹幕哟~</div>' +
+      '<div style="margin-top:12px; font-size:12px; color:#666;">El. Psy. Kongroo.</div>' +
     '</div>' +
     '<div id="dm-wrap"></div>';
   doc.body.appendChild(modal);
+  doc.getElementById('egg-close-btn').onclick = function() { modal.style.display = 'none'; };
 
-  doc.getElementById('egg-close-btn').onclick = function() {{ modal.style.display = 'none'; }};
+  // 3. 绑定触发按钮
+  var trigger = doc.getElementById('egg-trigger');
+  if (trigger) {
+    trigger.onclick = function() { modal.style.display = 'flex'; };
+  }
 
-  // 4. 点击触发按钮 -> 显示弹窗
-  triggerSpan.onclick = function() {{ modal.style.display = 'flex'; }};
-
-  // 5. 点击图片 -> 随机语录弹幕
+  // 4. 弹幕语录
   var quotes = [
-    '这、这可不是为了你才做的！',
-    '谁是助手啊！',
-    '不准叫我克里斯蒂娜！',
-    '你是笨蛋吗？还是快死了？',
-    '别一本正经地说中二台词啊！',
-    '我只是稍微有点在意而已。',
-    '哼，我才没有担心你。',
-    '你那贫弱的大脑终于开始运转了吗？',
-    '妄想也该有个限度吧。',
-    '真拿你没办法……',
-    '世界又不是围着你转的。',
-    '这、这种事情我怎么可能会高兴啊！',
-    '少得意忘形了。',
-    '你的逻辑漏洞多到让我头疼。',
-    '别靠这么近！',
-    '我只是出于科学兴趣才帮你的。',
-    '你脑子里的电波能不能停一下？',
-    '才不是因为喜欢你才留下来的。',
-    '真是个让人操心的家伙。',
-    '哼，下次可别指望我还会帮你。',
-    '不要叫我克里斯蒂娜！！你这个笨蛋变态中二病！！',
-    '我才没有脸红！这只是物理现象！',
-    '让我来帮助你就直说，何必拐弯抹角的。',
-    '哼，勉强夸你一句，可别得意忘形啊。',
-    '你……你这种态度，会让人误会的！',
-    '真搞不懂，为什么我非得陪你做这种蠢事……',
-    '不管在哪条世界线，你都不是一个人。不管在哪条世界线，我都一定会找到你。',
-    '未来是没有人能预测的，是无法重来的。正因如此，人们才能接受各种痛苦、不幸与飞来横祸，迈步前进。',
-    '时间根据每个人的主观感受，既会变长，也会变短。相对论真是既浪漫又伤感的东西呢。',
-    '不要想一味的改变现在，这只会让过去变得面目全非罢了。',
-    '无论发生什么，只要你相信自己，就一定能够克服困难。',
-    '过去的事情无法改变，但我们可以选择如何面对它。',
-    '……我只是在陈述事实而已，别想太多了！',
-    '我可没有在担心你，只是顺便看看而已！',
-    '你以为这样就能敷衍过去吗？太天真了！',
-    '听好了！这只是科学上的必然结果，才不是因为你！',
-    '开什么玩笑！我可是认真在讨论的！',
-    '不要擅自在那里自以为了解我！',
-    '如果你只是想来嘲讽我的话，请回吧。',
-    '我都说了，不要随便决定别人的事情！'
+    '这、这可不是为了你才做的！', '谁是助手啊！', '不准叫我克里斯蒂娜！',
+    '你是笨蛋吗？还是快死了？', '别一本正经地说中二台词啊！', '我只是稍微有点在意而已。',
+    '哼，我才没有担心你。', '你那贫弱的大脑终于开始运转了吗？', '妄想也该有个限度吧。',
+    '真拿你没办法……', '世界又不是围着你转的。', '少得意忘形了。',
+    '你的逻辑漏洞多到让我头疼。', '别靠这么近！', '我只是出于科学兴趣才帮你的。',
+    '你脑子里的电波能不能停一下？', '才不是因为喜欢你才留下来的。', '真是个让人操心的家伙。',
+    '哼，下次可别指望我还会帮你。', '不要叫我克里斯蒂娜！！你这个笨蛋变态中二病！！',
+    '我才没有脸红！这只是物理现象！', '不管在哪条世界线，我都一定会找到你。',
+    '时间根据每个人的主观感受，既会变长，也会变短。', '过去的事情无法改变，但我们可以选择如何面对它。'
   ];
-  doc.getElementById('egg-img').onclick = function(e) {{
+  var eggBox = modal.querySelector('.egg-box');
+  eggBox.onclick = function(e) {
     e.stopPropagation();
     var wrap = doc.getElementById('dm-wrap');
+    if (!wrap) return;
     var el = doc.createElement('div');
     el.className = 'dm-item';
     el.textContent = quotes[Math.floor(Math.random() * quotes.length)];
     el.style.top = (Math.random() * 70 + 5) + '%';
     el.style.left = (Math.random() * 75 + 5) + '%';
     wrap.appendChild(el);
-    if (wrap.children.length > 20) wrap.removeChild(wrap.firstChild);
-    setTimeout(function() {{ if (el.parentNode) el.remove(); }}, 3000);
-  }};
-}})();
+    if (wrap.children.length > 25) wrap.removeChild(wrap.firstChild);
+    setTimeout(function() { if (el.parentNode) el.remove(); }, 3200);
+  };
+})();
 </script>
 """, height=0)
-
