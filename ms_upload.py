@@ -86,5 +86,26 @@ for fname in files_to_upload:
     else:
         print("FAILED all endpoints")
 
+# Step 3: Trigger rebuild
+print("\nTriggering rebuild...")
+rebuild_ok = False
+for rebuild_url in [
+    f"https://www.modelscope.cn/api/v1/spaces/{SPACE_ID}/rebuild",
+    f"https://www.modelscope.cn/api/spaces/{SPACE_ID}/rebuild",
+]:
+    try:
+        resp = session.post(rebuild_url, headers=headers, timeout=30)
+        if resp.status_code in (200, 201, 202):
+            print(f"Rebuild triggered: {rebuild_url}")
+            rebuild_ok = True
+            break
+        else:
+            print(f"  Try {rebuild_url}: {resp.status_code}")
+    except Exception as e:
+        print(f"  Try {rebuild_url}: {e}")
+
+if not rebuild_ok:
+    print("⚠️ Rebuild API not available - visit the space page to trigger rebuild manually")
+
 print("\nDone!")
 print(f"\nVisit: https://www.modelscope.cn/spaces/{SPACE_ID}")
