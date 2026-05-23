@@ -321,103 +321,48 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---- 彩蛋：纯 Streamlit + CSS overlay（零 JS，兼容所有部署平台） ----
+# 点击 footer 中的按钮触发 CSS position:fixed 全屏遮罩
+_, footer_col = st.columns([7, 5])
+with footer_col:
+    egg_clicked = st.button("🎁 联系我：frostbitem@foxmail.com 🎁", key="egg_footer",
+                             help="点击打开彩蛋", use_container_width=True)
+
+# 彩蛋状态管理
+if "egg_open" not in st.session_state:
+    st.session_state.egg_open = False
+if egg_clicked:
+    st.session_state.egg_open = not st.session_state.egg_open
+
+# 当 egg_open 为 True 时，渲染 CSS fixed 全屏遮盖
+if st.session_state.egg_open:
+    # 渲染遮罩 + 弹窗（纯 CSS，无 JS）
+    st.markdown("""
+    <div id="egg-overlay" style="
+        position:fixed; top:0; left:0; width:100%; height:100%;
+        background:rgba(0,0,0,0.75); z-index:99999;
+        display:flex; justify-content:center; align-items:center;
+    ">
+      <div style="
+          background:linear-gradient(135deg,#1a1a2e,#16213e);
+          border-radius:16px; padding:32px 40px; max-width:420px;
+          text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.6);
+          position:relative;
+      ">
+        <div style="font-size:48px; line-height:1.4; margin:8px 0;">✨<br>🐱🎀</div>
+        <div style="color:#FFD700; font-size:18px; margin:12px 0 8px;">🐱 克里斯蒂娜喵~ 🐱</div>
+        <div style="color:#9CA3AF; font-size:13px;">El. Psy. Kongroo.</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    _, close_col = st.columns([3, 1])
+    with close_col:
+        if st.button("✕ 关闭", key="egg_close", use_container_width=True):
+            st.session_state.egg_open = False
+            st.rerun()
+
+# Footer text
 st.markdown(
-    f'<div class="footer">🛠️ <strong>makeby 牧濑红莉栖 & Cline</strong> &nbsp;|&nbsp; 🎁 联系我：frostbitem@foxmail.com 🎁 &nbsp;|&nbsp; 今日 {_today_visitors} 次 &nbsp;·&nbsp; 累计 {_total_visitors} 次</div>',
+    f'<div class="footer">🛠️ <strong>makeby 牧濑红莉栖 & Cline</strong> &nbsp;|&nbsp; 今日 {_today_visitors} 次 &nbsp;·&nbsp; 累计 {_total_visitors} 次</div>',
     unsafe_allow_html=True,
 )
-
-# ---- 彩蛋：完全在父页面 DOM 中运行的 flavor text easter egg ----
-# 使用 st.markdown + unsafe_allow_html 直接在父页面注入 JS（不需要 iframe，无沙盒限制）
-st.markdown("""
-<div id="egg-flavor" style="display:none;">
-  <button id="egg-flavor-btn" onclick="eggShowModal()" style="
-    position:fixed; bottom:20px; right:20px; z-index:99998;
-    background:linear-gradient(135deg,#FF6B6B,#ee5a24);
-    color:#fff; border:none; border-radius:50%; width:56px; height:56px;
-    font-size:24px; cursor:pointer; box-shadow:0 4px 15px rgba(238,90,36,.4);
-  ">🎁</button>
-</div>
-<style>
-#egg-flavor-modal {
-  display:none; position:fixed; z-index:999999; left:0; top:0;
-  width:100%; height:100%; background:rgba(0,0,0,.75);
-  justify-content:center; align-items:center;
-}
-#egg-flavor-modal .egg-box {
-  background:linear-gradient(135deg,#1a1a2e,#16213e);
-  border-radius:16px; padding:24px 32px; max-width:420px;
-  text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.6);
-  position:relative;
-}
-#egg-flavor-modal .egg-close {
-  position:absolute; top:8px; right:14px; color:#aaa; font-size:24px;
-  cursor:pointer;
-}
-#egg-flavor-modal .egg-close:hover { color:#fff; }
-#egg-flavor-modal .egg-art { font-size:48px; line-height:1.4; margin:12px 0; }
-#egg-flavor-modal .egg-text { color:#FFD700; font-size:16px; margin:8px 0 4px; }
-#egg-flavor-modal .egg-sub { color:#aaa; font-size:12px; }
-#egg-dm-wrap {
-  position:fixed; top:0; left:0; width:100%; height:100%;
-  pointer-events:none; overflow:hidden; z-index:999999;
-}
-.egg-dm-item {
-  position:fixed; font-size:1.3rem; font-weight:bold; color:#FFD700;
-  text-shadow:0 0 10px #000,0 0 5px #000; white-space:nowrap;
-  animation:egg-dm-up 3s ease-out forwards; pointer-events:none;
-}
-@keyframes egg-dm-up {
-  0% { opacity:1; transform:translateY(0); }
-  80% { opacity:1; }
-  100% { opacity:0; transform:translateY(-60px); }
-}
-</style>
-<div id="egg-flavor-modal">
-  <div class="egg-box">
-    <span class="egg-close" onclick="document.getElementById('egg-flavor-modal').style.display='none'">&times;</span>
-    <div class="egg-art">✨<br>🐱🎀</div>
-    <div class="egg-text">🐱 克里斯蒂娜喵~ 🐱</div>
-    <div class="egg-sub">👆 点我发送弹幕哟~</div>
-    <div style="margin-top:12px;font-size:12px;color:#666;">El. Psy. Kongroo.</div>
-  </div>
-  <div id="egg-dm-wrap"></div>
-</div>
-<script>
-(function(){
-  var container = document.getElementById('egg-flavor');
-  if (container) container.style.display = 'block';
-  // 弹幕语录
-  var quotes = [
-    '这、这可不是为了你才做的！','谁是助手啊！','不准叫我克里斯蒂娜！',
-    '你是笨蛋吗？还是快死了？','别一本正经地说中二台词啊！','我只是稍微有点在意而已。',
-    '哼，我才没有担心你。','你那贫弱的大脑终于开始运转了吗？','妄想也该有个限度吧。',
-    '真拿你没办法……','世界又不是围着你转的。','少得意忘形了。',
-    '你的逻辑漏洞多到让我头疼。','别靠这么近！','我只是出于科学兴趣才帮你的。',
-    '你脑子里的电波能不能停一下？','才不是因为喜欢你才留下来的。','真是个让人操心的家伙。',
-    '哼，下次可别指望我还会帮你。','不要叫我克里斯蒂娜！！你这个笨蛋变态中二病！！',
-    '我才没有脸红！这只是物理现象！','不管在哪条世界线，我都一定会找到你。',
-    '时间根据每个人的主观感受，既会变长，也会变短。','过去的事情无法改变，但我们可以选择如何面对它。'
-  ];
-  window.eggShowModal = function() {
-    var modal = document.getElementById('egg-flavor-modal');
-    if (modal) modal.style.display = 'flex';
-  };
-  var box = document.querySelector('.egg-box');
-  if (box) {
-    box.onclick = function(e) {
-      e.stopPropagation();
-      var wrap = document.getElementById('egg-dm-wrap');
-      if (!wrap) return;
-      var el = document.createElement('div');
-      el.className = 'egg-dm-item';
-      el.textContent = quotes[Math.floor(Math.random() * quotes.length)];
-      el.style.top = (Math.random() * 70 + 5) + '%';
-      el.style.left = (Math.random() * 75 + 5) + '%';
-      wrap.appendChild(el);
-      if (wrap.children.length > 25) wrap.removeChild(wrap.firstChild);
-      setTimeout(function() { if (el.parentNode) el.remove(); }, 3200);
-    };
-  }
-})();
-</script>
-""", unsafe_allow_html=True)
