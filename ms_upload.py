@@ -46,6 +46,7 @@ print(f"CSRF: {csrf[:20] if csrf else 'not found'}...")
 files_to_upload = [
     "app.py", "data_fetcher.py", "backtest.py", "charts.py",
     "requirements.txt", "streamlit_app.py", "README.md",
+    "egg.jpg",
 ]
 
 for fname in files_to_upload:
