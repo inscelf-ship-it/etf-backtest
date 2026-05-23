@@ -61,15 +61,13 @@ streamlit run app.py
      - **运行环境**: 选择 **Streamlit**
    - 点击 **"创建"**
 
-2. **一键上传代码**
+2. **Git 推送代码**
    ```bash
-   # 设置你的 ModelScope Token（仅首次）
-   $env:MODELSCOPE_TOKEN='你的token'
+   # 添加 ModelScope 远程仓库
+   git remote add modelscope https://oauth2:你的token@www.modelscope.cn/studios/konatos/etf-backtest.git
 
-   # 一键上传所有文件
-   cd fund_backtest
-   pip install requests
-   python ms_upload.py
+   # 推送代码
+   git push modelscope main:master
    ```
 
 3. **等待部署完成**（约 2-5 分钟）
