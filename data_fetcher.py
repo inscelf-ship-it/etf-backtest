@@ -14,7 +14,9 @@ os.environ.pop("https_proxy", None)
 import akshare as ak
 import pandas as pd
 import urllib.request
+import urllib.parse
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -39,7 +41,7 @@ ASSETS_DB = {
     "中证红利ETF(515080)":      {"code": "515080", "type": "etf", "category": "策略红利"},
     "红利低波ETF(512890)":      {"code": "512890", "type": "etf", "category": "策略红利"},
     "红利ETF(510880)":          {"code": "510880", "type": "etf", "category": "策略红利"},
-    "自由现金流ETF(159585)":    {"code": "159585", "type": "etf", "category": "策略红利"},
+    "自由现金流ETF(159222)":    {"code": "159222", "type": "etf", "category": "策略红利"},
     "基本面50ETF(512750)":      {"code": "512750", "type": "etf", "category": "策略红利"},
     "沪深300价值ETF(562320)":   {"code": "562320", "type": "etf", "category": "策略红利"},
     # ---- 海外指数(QDII-ETF) ----
@@ -68,12 +70,6 @@ ASSETS_DB = {
     "创业板指(399006)":         {"code": "399006", "type": "index", "market": "sz", "category": "A股指数"},
     "中证红利指数(000922)":     {"code": "000922", "type": "index", "market": "sh", "category": "A股指数"},
     "科创50指数(000688)":       {"code": "000688", "type": "index", "market": "sh", "category": "A股指数"},
-}
-
-# 腾讯财经接口的市场映射
-_TENCENT_MARKET_MAP = {
-    "sh": "sh",
-    "sz": "sz",
 }
 
 
@@ -125,8 +121,13 @@ def get_asset_history(
 
 
 def _get_etf_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """获取ETF历史数据：先试东方财富akshare，失败后fallback腾讯财经"""
-    # ---- 方法1: akshare fund_etf_hist_em (东方财富) ----
+    """
+    获取ETF历史数据（三层 fallback）:
+    1. akshare fund_etf_hist_em (东方财富)
+    2. 腾讯财经接口
+    3. 直接调用东方财富API (urllib 绕过系统代理)
+    """
+    # ---- 方法1: akshare fund_etf_hist_em (东方财富，走 requests) ----
     try:
         df = ak.fund_etf_hist_em(
             symbol=symbol,
@@ -141,24 +142,30 @@ def _get_etf_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
             df = df.sort_values("date").reset_index(drop=True)
             return df[["date", "close"]]
     except Exception:
-        pass  # fallback 到方法2
+        pass
 
-    # ---- 方法2: 腾讯财经接口 (适配沪深ETF) ----
+    # ---- 方法2: 腾讯财经接口 ---
     try:
-        return _get_etf_data_tencent(symbol, start_date, end_date)
+        df = _get_etf_data_tencent(symbol, start_date, end_date)
+        if df is not None and not df.empty:
+            return df
+    except Exception:
+        pass
+
+    # ---- 方法3: 直接调用东方财富API (urllib，不读系统代理) ----
+    try:
+        return _get_etf_data_em_direct(symbol, start_date, end_date)
     except Exception as e:
         raise RuntimeError(f"获取ETF数据失败 [{symbol}]: {str(e)}")
 
 
 def _get_etf_data_tencent(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     """使用腾讯财经接口获取ETF历史数据"""
-    # 判断market: 6开头上海, 0/159/5开头深圳
     if symbol.startswith("6"):
         market = "sh"
     else:
         market = "sz"
 
-    # 格式化日期
     s_date = datetime.strptime(start_date, "%Y%m%d").strftime("%Y-%m-%d")
     e_date = datetime.strptime(end_date, "%Y%m%d").strftime("%Y-%m-%d")
 
@@ -175,60 +182,236 @@ def _get_etf_data_tencent(symbol: str, start_date: str, end_date: str) -> pd.Dat
         raise ValueError(f"腾讯接口返回错误码: {data.get('code')}")
 
     raw_data = data.get("data", {}).get(f"{market}{symbol}", {})
-    # 尝试多个可能的 key 存放K线数据
     klines = raw_data.get("qfqday") or raw_data.get("day") or raw_data.get("data")
-    if not klines or not isinstance(klines, list):
-        raise ValueError(f"未从腾讯接口获取到K线数据")
+    if not klines or not isinstance(klines, list) or len(klines) == 0:
+        raise ValueError("腾讯接口返回K线数据为空")
 
     records = []
     for item in klines:
         if len(item) < 6:
             continue
-        # 格式: [date, open, close, high, low, volume]
         date_str = str(item[0])
         close_val = float(item[2])
         records.append({"date": date_str, "close": close_val})
 
     if not records:
-        raise ValueError(f"解析K线数据为空")
+        raise ValueError("解析K线数据为空")
 
     df = pd.DataFrame(records)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
 
-    # 按请求的日期范围过滤
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
     df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
 
     if df.empty:
-        raise ValueError(f"在指定日期范围内无数据")
+        raise ValueError("在指定日期范围内无数据")
+
+    return df[["date", "close"]]
+
+
+def _get_etf_data_em_direct(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    直接调用东方财富K线API (使用 urllib 不走系统代理)
+    API: http://push2his.eastmoney.com/api/qt/stock/kline/get
+    """
+    # 判断 secid: 1=上海, 0=深圳
+    secid_prefix = "1" if symbol.startswith("6") else "0"
+
+    # 将 YYYYMMDD 转时间戳(秒)
+    def date_to_ts(date_str: str) -> int:
+        dt = datetime.strptime(date_str, "%Y%m%d")
+        return int(dt.timestamp())
+
+    params = {
+        "secid": f"{secid_prefix}.{symbol}",
+        "ut": "fa5fd1943c7b386f172d6893dab9f9cc",
+        "fields1": "f1,f2,f3,f4,f5,f6",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+        "klt": "101",       # 日K
+        "fqt": "1",         # 前复权
+        "end": "20500101",  # 获取所有数据
+        "lmt": "2000",      # 最多2000条
+    }
+
+    url = "http://push2his.eastmoney.com/api/qt/stock/kline/get?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://quote.eastmoney.com/",
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode())
+
+    klines = data.get("data", {}).get("klines", [])
+    if not klines:
+        raise ValueError("东方财富API返回K线数据为空")
+
+    records = []
+    for item in klines:
+        # 格式: "2024-01-02,1.806,...,..."
+        parts = str(item).split(",")
+        if len(parts) < 3:
+            continue
+        date_str = parts[0]
+        close_val = float(parts[2])
+        records.append({"date": date_str, "close": close_val})
+
+    if not records:
+        raise ValueError("解析K线数据为空")
+
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+    df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
+
+    if df.empty:
+        raise ValueError("在指定日期范围内无数据")
 
     return df[["date", "close"]]
 
 
 def _get_index_data(symbol: str, market: str, start_date: str, end_date: str) -> pd.DataFrame:
     """获取A股指数历史数据"""
+    # ---- 方法1: akshare stock_zh_index_daily ----
     try:
         full_symbol = f"{market}{symbol}"
         df = ak.stock_zh_index_daily(symbol=full_symbol)
         if df is None or df.empty:
             raise ValueError(f"未获取到 {symbol} 的数据")
-        df = df.rename(columns={"date": "date"})
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
 
-        # 过滤日期范围
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(end_date)
         df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
 
         if df.empty:
-            raise ValueError(f"在指定日期范围内无数据")
+            raise ValueError("在指定日期范围内无数据")
 
         return df[["date", "close"]]
+    except Exception:
+        pass
+
+    # ---- 方法2: 东方财富指数K线API (urllib直接调用) ----
+    try:
+        return _get_index_data_em_direct(symbol, market, start_date, end_date)
+    except Exception:
+        pass
+
+    # ---- 方法3: 腾讯财经接口获取指数数据 ----
+    try:
+        return _get_index_data_tencent(symbol, market, start_date, end_date)
     except Exception as e:
         raise RuntimeError(f"获取指数数据失败 [{symbol}]: {str(e)}")
+
+
+def _get_index_data_em_direct(symbol: str, market: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    直接调用东方财富指数K线API
+    指数secid: 1.000300 (上海), 0.399006 (深圳)
+    """
+    secid_prefix = "1" if market == "sh" else "0"
+
+    params = {
+        "secid": f"{secid_prefix}.{symbol}",
+        "ut": "fa5fd1943c7b386f172d6893dab9f9cc",
+        "fields1": "f1,f2,f3,f4,f5,f6",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+        "klt": "101",
+        "fqt": "1",
+        "end": "20500101",
+        "lmt": "2000",
+    }
+
+    url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://quote.eastmoney.com/",
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode())
+
+    klines = data.get("data", {}).get("klines", [])
+    if not klines:
+        raise ValueError("东方财富指数API返回K线数据为空")
+
+    records = []
+    for item in klines:
+        parts = str(item).split(",")
+        if len(parts) < 3:
+            continue
+        date_str = parts[0]
+        close_val = float(parts[2])
+        records.append({"date": date_str, "close": close_val})
+
+    if not records:
+        raise ValueError("解析K线数据为空")
+
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+    df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
+
+    if df.empty:
+        raise ValueError("在指定日期范围内无数据")
+
+    return df[["date", "close"]]
+
+
+def _get_index_data_tencent(symbol: str, market: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """使用腾讯财经接口获取指数历史数据"""
+    # 指数在腾讯 api 用 sh000922 / sz399006 格式
+    prefix = "sh" if market == "sh" else "sz"
+    s_date = datetime.strptime(start_date, "%Y%m%d").strftime("%Y-%m-%d")
+    e_date = datetime.strptime(end_date, "%Y%m%d").strftime("%Y-%m-%d")
+
+    url = (
+        f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?param={prefix}{symbol},day,{s_date},{e_date},400,qfq"
+    )
+
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode())
+
+    if data.get("code") != 0:
+        raise ValueError(f"腾讯接口返回错误码: {data.get('code')}")
+
+    raw_data = data.get("data", {}).get(f"{prefix}{symbol}", {})
+    klines = raw_data.get("qfqday") or raw_data.get("day") or raw_data.get("data")
+    if not klines or not isinstance(klines, list) or len(klines) == 0:
+        raise ValueError("腾讯接口返回指数K线数据为空")
+
+    records = []
+    for item in klines:
+        if len(item) < 6:
+            continue
+        date_str = str(item[0])
+        close_val = float(item[2])
+        records.append({"date": date_str, "close": close_val})
+
+    if not records:
+        raise ValueError("解析K线数据为空")
+
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+    df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].reset_index(drop=True)
+
+    if df.empty:
+        raise ValueError("在指定日期范围内无数据")
+
+    return df[["date", "close"]]
 
 
 if __name__ == "__main__":
