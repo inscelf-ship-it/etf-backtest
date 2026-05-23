@@ -3,6 +3,14 @@
 支持 A股ETF、海外ETF、A股指数 等多类型标的
 """
 
+import os
+
+# 在导入任何网络库之前清除代理设置
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("HTTPS_PROXY", None)
+os.environ.pop("http_proxy", None)
+os.environ.pop("https_proxy", None)
+
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
@@ -109,7 +117,7 @@ def get_asset_history(
 
 
 def _get_etf_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """获取ETF历史数据"""
+    """获取ETF历史数据（使用 fund_etf_hist_em）"""
     try:
         df = ak.fund_etf_hist_em(
             symbol=symbol,
