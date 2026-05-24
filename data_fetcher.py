@@ -123,11 +123,27 @@ def get_asset_history(
 def _get_etf_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     """
     获取ETF历史数据（三层 fallback）:
-    1. akshare fund_etf_hist_em (东方财富)
-    2. 腾讯财经接口
-    3. 直接调用东方财富API (urllib 绕过系统代理)
+    1. 直接调用东方财富API (urllib 不走系统代理) — 最快最稳定
+    2. 腾讯财经接口（按月拆分请求）
+    3. akshare fund_etf_hist_em（走 requests，受代理影响可能较慢）
     """
-    # ---- 方法1: akshare fund_etf_hist_em (东方财富，走 requests) ----
+    # ---- 方法1(首选): 直接调用东方财富API (urllib，不读系统代理) ----
+    try:
+        df = _get_etf_data_em_direct(symbol, start_date, end_date)
+        if df is not None and not df.empty:
+            return df
+    except Exception:
+        pass
+
+    # ---- 方法2: 腾讯财经接口 ---
+    try:
+        df = _get_etf_data_tencent(symbol, start_date, end_date)
+        if df is not None and not df.empty:
+            return df
+    except Exception:
+        pass
+
+    # ---- 方法3: akshare fund_etf_hist_em (东方财富，走 requests) ----
     try:
         df = ak.fund_etf_hist_em(
             symbol=symbol,
@@ -144,60 +160,100 @@ def _get_etf_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     except Exception:
         pass
 
-    # ---- 方法2: 腾讯财经接口 ---
-    try:
-        df = _get_etf_data_tencent(symbol, start_date, end_date)
-        if df is not None and not df.empty:
-            return df
-    except Exception:
-        pass
-
-    # ---- 方法3: 直接调用东方财富API (urllib，不读系统代理) ----
-    try:
-        return _get_etf_data_em_direct(symbol, start_date, end_date)
-    except Exception as e:
-        raise RuntimeError(f"获取ETF数据失败 [{symbol}]: {str(e)}")
+    raise RuntimeError(f"获取ETF数据失败 [{symbol}]，所有数据源均不可用")
 
 
-def _get_etf_data_tencent(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """使用腾讯财经接口获取ETF历史数据"""
-    if symbol.startswith("6"):
-        market = "sh"
-    else:
-        market = "sz"
-
-    s_date = datetime.strptime(start_date, "%Y%m%d").strftime("%Y-%m-%d")
-    e_date = datetime.strptime(end_date, "%Y%m%d").strftime("%Y-%m-%d")
-
+def _tencent_fetch_year(market_symbol: str, year: int) -> list:
+    """获取腾讯单年数据，返回K线列表"""
+    s = f"{year}-01-01"
+    e = f"{year}-12-31"
     url = (
         f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-        f"?param={market}{symbol},day,{s_date},{e_date},400,qfq"
+        f"?param={market_symbol},day,{s},{e},500,qfq"
     )
-
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read().decode())
 
     if data.get("code") != 0:
-        raise ValueError(f"腾讯接口返回错误码: {data.get('code')}")
+        return []
 
-    raw_data = data.get("data", {}).get(f"{market}{symbol}", {})
+    d = data.get("data", {})
+    if isinstance(d, list):
+        # param error or empty response
+        return []
+
+    raw_data = d.get(market_symbol, {})
+    if not isinstance(raw_data, dict):
+        return []
+
     klines = raw_data.get("qfqday") or raw_data.get("day") or raw_data.get("data")
     if not klines or not isinstance(klines, list) or len(klines) == 0:
+        return []
+
+    result = []
+    for item in klines:
+        if len(item) < 3:
+            continue
+        result.append({"date": str(item[0]), "close": float(item[2])})
+    return result
+
+
+def _tencent_fetch_range(market_symbol: str, year_start: int, year_end: int) -> list:
+    """获取腾讯按年数据，返回K线列表（每一年单独请求，已验证最高242条可正常返回）"""
+    result = []
+    for year in range(year_start, year_end + 1):
+        s = f"{year}-01-01"
+        e = f"{year}-12-31"
+        url = (
+            f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+            f"?param={market_symbol},day,{s},{e},500,qfq"
+        )
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("code") != 0:
+                continue
+            d = data.get("data", {})
+            if isinstance(d, list):
+                continue
+            raw_data = d.get(market_symbol, {})
+            if not isinstance(raw_data, dict):
+                continue
+            klines = raw_data.get("qfqday") or raw_data.get("day") or raw_data.get("data")
+            if not klines or not isinstance(klines, list) or len(klines) == 0:
+                continue
+            for item in klines:
+                if len(item) < 3:
+                    continue
+                result.append({"date": str(item[0]), "close": float(item[2])})
+        except Exception:
+            pass
+    return result
+
+
+def _get_etf_data_tencent(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """使用腾讯财经接口获取ETF历史数据（按年拆分，避免日期范围过大导致 param error）"""
+    # 上海ETF: 51xxx, 56xxx, 58xxx, 588xxx, 60xxxx
+    # 深圳ETF: 159xxx
+    if symbol.startswith("159"):
+        market = "sz"
+    else:
+        market = "sh"
+
+    market_symbol = f"{market}{symbol}"
+    start_dt = datetime.strptime(start_date, "%Y%m%d")
+    end_dt = datetime.strptime(end_date, "%Y%m%d")
+
+    # 按年拆分请求（已验证单整年数据可正常返回）
+    all_records = _tencent_fetch_range(market_symbol, start_dt.year, end_dt.year)
+
+    if not all_records:
         raise ValueError("腾讯接口返回K线数据为空")
 
-    records = []
-    for item in klines:
-        if len(item) < 6:
-            continue
-        date_str = str(item[0])
-        close_val = float(item[2])
-        records.append({"date": date_str, "close": close_val})
-
-    if not records:
-        raise ValueError("解析K线数据为空")
-
-    df = pd.DataFrame(records)
+    df = pd.DataFrame(all_records)
+    df = df.drop_duplicates(subset="date").reset_index(drop=True)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
 
@@ -217,7 +273,9 @@ def _get_etf_data_em_direct(symbol: str, start_date: str, end_date: str) -> pd.D
     API: http://push2his.eastmoney.com/api/qt/stock/kline/get
     """
     # 判断 secid: 1=上海, 0=深圳
-    secid_prefix = "1" if symbol.startswith("6") else "0"
+    # 上海ETF: 51xxx, 56xxx, 58xxx, 588xxx 等
+    # 深圳ETF: 159xxx
+    secid_prefix = "0" if symbol.startswith("159") else "1"
 
     # 将 YYYYMMDD 转时间戳(秒)
     def date_to_ts(date_str: str) -> int:
@@ -232,10 +290,10 @@ def _get_etf_data_em_direct(symbol: str, start_date: str, end_date: str) -> pd.D
         "klt": "101",       # 日K
         "fqt": "1",         # 前复权
         "end": "20500101",  # 获取所有数据
-        "lmt": "2000",      # 最多2000条
+        "lmt": "10000",     # 最多10000条（约40年数据，覆盖所有合理回测范围）
     }
 
-    url = "http://push2his.eastmoney.com/api/qt/stock/kline/get?" + urllib.parse.urlencode(params)
+    url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0",
         "Referer": "https://quote.eastmoney.com/",
@@ -324,7 +382,7 @@ def _get_index_data_em_direct(symbol: str, market: str, start_date: str, end_dat
         "klt": "101",
         "fqt": "1",
         "end": "20500101",
-        "lmt": "2000",
+        "lmt": "10000",     # 最多10000条（约40年数据）
     }
 
     url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?" + urllib.parse.urlencode(params)
@@ -366,41 +424,19 @@ def _get_index_data_em_direct(symbol: str, market: str, start_date: str, end_dat
 
 
 def _get_index_data_tencent(symbol: str, market: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """使用腾讯财经接口获取指数历史数据"""
-    # 指数在腾讯 api 用 sh000922 / sz399006 格式
+    """使用腾讯财经接口获取指数历史数据（按年拆分，避免日期范围过大）"""
     prefix = "sh" if market == "sh" else "sz"
-    s_date = datetime.strptime(start_date, "%Y%m%d").strftime("%Y-%m-%d")
-    e_date = datetime.strptime(end_date, "%Y%m%d").strftime("%Y-%m-%d")
+    market_symbol = f"{prefix}{symbol}"
+    start_dt = datetime.strptime(start_date, "%Y%m%d")
+    end_dt = datetime.strptime(end_date, "%Y%m%d")
 
-    url = (
-        f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-        f"?param={prefix}{symbol},day,{s_date},{e_date},400,qfq"
-    )
+    all_records = _tencent_fetch_range(market_symbol, start_dt.year, end_dt.year)
 
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read().decode())
-
-    if data.get("code") != 0:
-        raise ValueError(f"腾讯接口返回错误码: {data.get('code')}")
-
-    raw_data = data.get("data", {}).get(f"{prefix}{symbol}", {})
-    klines = raw_data.get("qfqday") or raw_data.get("day") or raw_data.get("data")
-    if not klines or not isinstance(klines, list) or len(klines) == 0:
+    if not all_records:
         raise ValueError("腾讯接口返回指数K线数据为空")
 
-    records = []
-    for item in klines:
-        if len(item) < 6:
-            continue
-        date_str = str(item[0])
-        close_val = float(item[2])
-        records.append({"date": date_str, "close": close_val})
-
-    if not records:
-        raise ValueError("解析K线数据为空")
-
-    df = pd.DataFrame(records)
+    df = pd.DataFrame(all_records)
+    df = df.drop_duplicates(subset="date").reset_index(drop=True)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").reset_index(drop=True)
 
