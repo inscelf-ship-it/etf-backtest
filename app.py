@@ -363,8 +363,8 @@ body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; }}
 #egg-trigger:hover {{ color:#D1D5DB; }}
 #egg-overlay {{ display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:rgba(0,0,0,0.25); justify-content:center; align-items:center; }}
 #egg-overlay.show {{ display:flex; }}
-#egg-img {{ max-height:95vh; max-width:95vw; width:auto; height:auto; border-radius:12px; display:block; user-select:none; object-fit:scale-down; box-shadow:0 4px 30px rgba(0,0,0,0.35); position:relative; z-index:1; }}
-@media (max-width:768px) {{ #egg-img {{ max-height:98vh; max-width:98vw; object-fit:scale-down; }} }}
+#egg-img {{ max-height:95vh; max-width:95vw; width:auto; height:auto; border-radius:12px; display:block; user-select:none; object-fit:contain; box-shadow:0 4px 30px rgba(0,0,0,0.35); position:relative; z-index:1; }}
+@media (max-width:768px) {{ #egg-img {{ max-height:98vh; max-width:98vw; object-fit:contain; }} }}
 #egg-close {{ position:fixed; top:20px; right:20px; z-index:9999999; background:rgba(0,0,0,0.5); color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:22px; cursor:pointer; line-height:40px; text-align:center; padding:0; backdrop-filter:blur(4px); transition:all 0.2s; }}
 #egg-close:hover {{ background:rgba(0,0,0,0.7); transform:scale(1.1); }}
 .dm-el {{ position:fixed; font-size:19px; font-weight:600; text-shadow:0 0 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.8),0 0 2px #000; white-space:nowrap; z-index:999999; opacity:1; transition:opacity 0.5s ease; pointer-events:none; }}
