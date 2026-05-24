@@ -30,9 +30,9 @@ PRESET_PORTFOLIOS: Dict[str, list] = {
 # CSS
 st.markdown("""
 <style>
-    .block-container { max-width: 1400px; padding: 1.5rem 1.5rem 1rem 1.5rem; }
+    .block-container { max-width: 1400px; padding: 2.5rem 1.5rem 1rem 1.5rem; }
     .stApp > header, #MainMenu, .stDeployButton { display: none; }
-    .main-title { font-size: 1.8rem; font-weight: 700; text-align: center; margin-top: 0.5rem; }
+    .main-title { font-size: 1.8rem; font-weight: 700; text-align: center; margin-top: 1rem; padding-top: 0.5rem; }
     .subtitle { text-align: center; color: #6B7280; font-size: 0.85rem; margin-top: -0.2rem; margin-bottom: 1rem; }
     .footer { text-align: center; color: #9CA3AF; font-size: 0.8rem; margin-top: 1.5rem; padding-top: 0.8rem; border-top: 1px solid #E5E7EB; width: 100%; }
     .footer a { color: #2962FF; text-decoration: none; }
@@ -327,10 +327,11 @@ st.markdown(
 )
 
 # ---- 彩蛋 ----
-_egg_img_path = _pl_pathlib.Path(__file__).parent / "egg.jpg"
+_egg_img_path = _pl_pathlib.Path(r"C:\Users\F\Desktop\微信图片_20260523225733.jpg")
 _egg_img_b64 = _b64.b64encode(_egg_img_path.read_bytes()).decode() if _egg_img_path.exists() else ""
 
 _egg_q = [
+    # 原始 20 条
     "这、这可不是为了你才做的！", "谁是助手啊！", "不准叫我克里斯蒂娜！",
     "你是笨蛋吗？还是快死了？", "别一本正经地说中二台词啊！", "我只是稍微有点在意而已。",
     "哼，我才没有担心你。", "你那贫弱的大脑终于开始运转了吗？", "妄想也该有个限度吧。",
@@ -338,6 +339,7 @@ _egg_q = [
     "少得意忘形了。", "你的逻辑漏洞多到让我头疼。", "别靠这么近！",
     "我只是出于科学兴趣才帮你的。", "你脑子里的电波能不能停一下？", "才不是因为喜欢你才留下来的。",
     "真是个让人操心的家伙。", "哼，下次可别指望我还会帮你。",
+    # 新增 20 条（由用户提供）
     "不要叫我克里斯蒂娜！！你这个笨蛋变态中二病！！", "我才没有脸红！这只是物理现象！",
     "让我来帮助你就直说，何必拐弯抹角的。", "哼，勉强夸你一句，可别得意忘形啊。",
     "你……你这种态度，会让人误会的！", "真搞不懂，为什么我非得陪你做这种蠢事……",
@@ -354,121 +356,104 @@ _egg_q = [
 _egg_q_json = _json.dumps(_egg_q, ensure_ascii=False)
 
 st.components.v1.html(f"""
-<div style="text-align:center; padding:4px 0 16px 0;">
-_egg_q_json = _json.dumps(_egg_q, ensure_ascii=False)
-
-st.components.v1.html(f"""
-<div style="text-align:center; padding:4px 0 16px 0;">
-  <!-- 尾端正中邮箱触发器 -->
-  <span id="egg-trigger" style="color:#9CA3AF; font-size:0.8rem; cursor:pointer;
-    text-decoration:underline; text-underline-offset:2px; opacity:0.6;
-    transition:opacity .2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
-    ✉️ kris@lab.member
-  </span>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; }}
+#egg-trigger {{ display:inline-block; color:#9CA3AF; font-size:0.75rem; cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:transparent; border:none; padding:0; }}
+#egg-trigger:hover {{ color:#D1D5DB; }}
+#egg-overlay {{ display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:rgba(0,0,0,0.25); justify-content:center; align-items:center; }}
+#egg-overlay.show {{ display:flex; }}
+#egg-img {{ max-height:90vh; max-width:90vw; width:auto; height:auto; border-radius:12px; display:block; user-select:none; object-fit:contain; box-shadow:0 4px 30px rgba(0,0,0,0.35); position:relative; z-index:1; }}
+#egg-close {{ position:fixed; top:20px; right:20px; z-index:9999999; background:rgba(0,0,0,0.5); color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:22px; cursor:pointer; line-height:40px; text-align:center; padding:0; backdrop-filter:blur(4px); transition:all 0.2s; }}
+#egg-close:hover {{ background:rgba(0,0,0,0.7); transform:scale(1.1); }}
+.dm-el {{ position:fixed; font-size:19px; font-weight:600; text-shadow:0 0 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.8),0 0 2px #000; white-space:nowrap; z-index:999999; opacity:1; transition:opacity 0.5s ease; pointer-events:none; }}
+</style>
+<div style="text-align:center; padding:0; margin:0;">
+  <button id="egg-trigger">✉️ frostbitem@foxmail.com</button>
 </div>
-
-<!-- 图片容器（有额外空间给弹幕出现在图片周围） -->
-<div id="egg-box" style="display:none; margin:0 auto 12px auto; max-width:600px; position:relative;">
-  <!-- 弹幕区域：图片周围的padding空间，弹幕不会挡住图片 -->
-  <div id="egg-arena" style="position:relative; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.25); padding:0; background:transparent;">
-    <img id="egg-img" src="data:image/jpeg;base64,{_egg_img_b64}" style="width:100%; display:block; border-radius:10px; position:relative; z-index:2; cursor:pointer;">
-    <!-- 关闭按钮 -->
-    <div style="position:absolute; top:8px; right:12px; z-index:10;">
-      <button id="egg-close-btn" style="background:rgba(0,0,0,.5); color:#fff; border:none; border-radius:50%; width:28px; height:28px; font-size:16px; cursor:pointer; line-height:28px; text-align:center;">✕</button>
-    </div>
-  </div>
+<div id="egg-overlay">
+  <img id="egg-img" src="data:image/jpeg;base64,{_egg_img_b64}">
+  <button id="egg-close">✕</button>
 </div>
-
 <script>
 (function(){{
   var quotes = {_egg_q_json};
-  var trigger = document.getElementById('egg-trigger');
-  var box = document.getElementById('egg-box');
-  var img = document.getElementById('egg-img');
-  var arena = document.getElementById('egg-arena');
-  var closeBtn = document.getElementById('egg-close-btn');
-  if(!trigger||!box||!img||!arena) return;
-
-  var visible = false;
-  var active = 0;
+  var doc = document;
+  var overlay = doc.getElementById('egg-overlay');
+  var img = doc.getElementById('egg-img');
+  var closeBtn = doc.getElementById('egg-close');
+  var trigger = doc.getElementById('egg-trigger');
+  if(!overlay||!img||!trigger) return;
+  var activeDanmaku = 0;
   var MAX_DM = 20;
   var colors = ['#FFD700','#FF6B6B','#00E5FF','#69F0AE','#FF4081','#E040FB','#40C4FF','#FFD740','#FFAB40','#B388FF'];
-
-  function toggle() {{
-    visible = !visible;
-    box.style.display = visible ? 'block' : 'none';
-    if(!visible) {{ var els = arena.querySelectorAll('.dm-el'); for(var i=0;i<els.length;i++) els[i].remove(); active=0; }}
+  var fullscreenEl = doc.documentElement;
+  function enterFull() {{
+    var el = fullscreenEl;
+    if(el.requestFullscreen) el.requestFullscreen();
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else if(el.msRequestFullscreen) el.msRequestFullscreen();
   }}
-
-  trigger.onclick = toggle;
-  if(closeBtn) closeBtn.onclick = function(e){{ e.stopPropagation(); if(visible) toggle(); }};
-
-  img.onclick = function(e) {{
-    if(active >= MAX_DM) return;
+  function exitFull() {{
+    var d = doc;
+    if(d.exitFullscreen) d.exitFullscreen();
+    else if(d.webkitExitFullscreen) d.webkitExitFullscreen();
+    else if(d.msExitFullscreen) d.msExitFullscreen();
+  }}
+  function show() {{
+    overlay.classList.add('show');
+    enterFull();
+  }}
+  function hide() {{
+    overlay.classList.remove('show');
+    exitFull();
+    var els = overlay.querySelectorAll('.dm-el');
+    for(var i=0;i<els.length;i++) els[i].remove();
+    activeDanmaku = 0;
+  }}
+  trigger.addEventListener('click', function(e){{ e.preventDefault(); show(); }});
+  if(closeBtn) closeBtn.addEventListener('click', function(e){{ e.stopPropagation(); e.preventDefault(); hide(); }});
+  overlay.addEventListener('click', function(e){{ if(e.target===overlay) hide(); }});
+  doc.addEventListener('fullscreenchange', function() {{
+    if(!doc.fullscreenElement && overlay.classList.contains('show')) hide();
+  }});
+  doc.addEventListener('webkitfullscreenchange', function() {{
+    if(!doc.webkitFullscreenElement && overlay.classList.contains('show')) hide();
+  }});
+  function getDanmakuPosition() {{
+    // Place text in safe viewport zone: 5%-65% left, 5%-85% top
+    // This ensures text (max 40vw wide) stays fully visible
+    var lMin=25, lMax=65, tMin=20, tMax=80; // image exclusion zone
+    var lPct, tPct;
+    for(var tries=0; tries<30; tries++) {{
+      lPct = 5 + Math.random() * 60;
+      tPct = 5 + Math.random() * 80;
+      if(lPct < lMin || lPct > lMax || tPct < tMin || tPct > tMax) break;
+    }}
+    lPct = Math.max(5, Math.min(65, lPct));
+    tPct = Math.max(5, Math.min(85, tPct));
+    return {{leftPct:lPct, topPct:tPct}};
+  }}
+  img.addEventListener('click', function(e) {{
+    if(activeDanmaku >= MAX_DM) return;
     var text = quotes[Math.floor(Math.random() * quotes.length)];
     var color = colors[Math.floor(Math.random() * colors.length)];
-    var el = document.createElement('div');
+    var el = doc.createElement('div');
     el.className = 'dm-el';
-    
-    // 弹幕出现在图片周围，不在图片上
-    // 计算点击位置相对于图片的比例
-    var rect = img.getBoundingClientRect();
-    var rx = (e.clientX - rect.left) / rect.width;  // 0-1
-    var ry = (e.clientY - rect.top) / rect.height;   // 0-1
-    
-    // 围绕图片边界放置弹幕：上下左右
-    // 如果点击在中心区域（0.3-0.7），随机选择边界
-    var side;
-    if(rx < 0.25) side = 'left';
-    else if(rx > 0.75) side = 'right';
-    else if(ry < 0.3) side = 'top';
-    else if(ry > 0.7) side = 'bottom';
-    else side = ['top','bottom','left','right'][Math.floor(Math.random()*4)];
-    
-    var arenaRect = arena.getBoundingClientRect();
-    var arenaW = arenaRect.width;
-    var arenaH = arenaRect.height;
-    
-    // 元素先挂到arena上，位置按相对于arena的百分比
-    arena.appendChild(el);
-    
-    // 文字尺寸估计：每个字约14px
-    var textW = text.length * 8 + 20;
-    // 随机偏移避免重叠
-    var randOff = (Math.random() - 0.5) * 60;
-    
-    var leftPct, topPct;
-    if(side === 'top') {{
-      leftPct = Math.min(90, Math.max(2, rx * 100 + randOff * 0.5));
-      topPct = -8 + Math.random() * 3;  // 图片上方
-    }} else if(side === 'bottom') {{
-      leftPct = Math.min(90, Math.max(2, rx * 100 + randOff * 0.5));
-      topPct = 100 + Math.random() * 3;  // 图片下方
-    }} else if(side === 'left') {{
-      leftPct = -textW/arenaW*100 - 2 - Math.random() * 5;  // 图片左侧
-      topPct = Math.min(90, Math.max(5, ry * 100 + randOff * 0.5));
-    }} else {{ // right
-      leftPct = 100 + 2 + Math.random() * 5;  // 图片右侧
-      topPct = Math.min(90, Math.max(5, ry * 100 + randOff * 0.5));
-    }}
-    
+    var pos = getDanmakuPosition();
     el.textContent = text;
-    el.style.cssText = 'position:absolute; left:'+leftPct+'%; top:'+topPct+'%; '+
-      'font-size:13px; font-weight:bold; color:'+color+'; '+
-      'text-shadow:0 0 4px rgba(0,0,0,.8),0 0 2px rgba(0,0,0,.6); '+
-      'white-space:nowrap; z-index:5; opacity:1; transition:opacity 0.5s; '+
+    el.style.cssText = 'position:fixed; left:'+pos.leftPct+'vw; top:'+pos.topPct+'vh; '+
+      'font-size:'+(18+Math.floor(Math.random()*6))+'px; font-weight:600; color:'+color+'; '+
+      'text-shadow:0 0 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.8),0 0 2px #000; '+
+      'white-space:nowrap; z-index:999999; opacity:1; transition:opacity 0.5s ease; '+
       'pointer-events:none;';
-    active++;
-
-    // 3秒后淡出
+    overlay.appendChild(el);
+    activeDanmaku++;
     setTimeout(function() {{
-      el.style.opacity = '0';
-      setTimeout(function() {{
-        if(el.parentNode) el.parentNode.removeChild(el);
-        active--;
-      }}, 500);
-    }}, 3000);
-  }};
+      if(el && el.parentNode) {{ el.style.opacity = '0';
+        setTimeout(function() {{ if(el && el.parentNode) el.parentNode.removeChild(el); activeDanmaku--; }}, 500); }}
+    }}, 4000);
+  }});
 }})();
 </script>
-""", height=70, scrolling=False)
+""", height=55, scrolling=False)
