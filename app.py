@@ -6,6 +6,9 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from typing import Dict
+import pathlib as _pl_pathlib
+import json as _json
+import base64 as _b64
 
 from data_fetcher import get_asset_history, list_available_assets
 from backtest import backtest_multi_dca
@@ -284,9 +287,7 @@ with col_right:
         strategy_label = s.get("策略", "月度定投")
         c3.write(f"{strategy_label} / {s.get('定投总次数', 0)}次 / {s['年数']:.1f}年")
 
-# Disclaimer + Footer
-# ---- 浏览计数（每session只计一次） ----
-import pathlib as _pl_pathlib, json as _json
+# ---- 浏览计数 ----
 _visitor_file = _pl_pathlib.Path(__file__).parent / "_visitor_count.json"
 _today_str = date.today().isoformat()
 if "_visitor_counted" not in st.session_state:
@@ -305,7 +306,6 @@ if "_visitor_counted" not in st.session_state:
     except Exception:
         pass
     st.session_state._visitor_counted = True
-# 读取最新计数
 _visitor_data = {"total": 1, "daily": {_today_str: 1}}
 if _visitor_file.exists():
     try:
@@ -321,14 +321,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Footer text
 st.markdown(
     f'<div class="footer">🛠️ <strong>makeby 牧濑红莉栖 & Cline</strong> &nbsp;|&nbsp; 今日 {_today_visitors} 次 &nbsp;·&nbsp; 累计 {_total_visitors} 次</div>',
     unsafe_allow_html=True,
 )
 
-# ---- 彩蛋：邮箱触发→图片→点击图片弹出周围弹幕 ---- 
-import base64 as _b64, json as _json
+# ---- 彩蛋 ----
 _egg_img_path = _pl_pathlib.Path(__file__).parent / "egg.jpg"
 _egg_img_b64 = _b64.b64encode(_egg_img_path.read_bytes()).decode() if _egg_img_path.exists() else ""
 
@@ -353,6 +351,10 @@ _egg_q = [
     "开什么玩笑！我可是认真在讨论的！", "不要擅自在那里自以为了解我！",
     "如果你只是想来嘲讽我的话，请回吧。", "我都说了，不要随便决定别人的事情！",
 ]
+_egg_q_json = _json.dumps(_egg_q, ensure_ascii=False)
+
+st.components.v1.html(f"""
+<div style="text-align:center; padding:4px 0 16px 0;">
 _egg_q_json = _json.dumps(_egg_q, ensure_ascii=False)
 
 st.components.v1.html(f"""
